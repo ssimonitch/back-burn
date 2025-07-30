@@ -6,26 +6,28 @@ This document tracks dependencies between tasks across all sprints to help ident
 
 ### Internal Dependencies
 ```
-Schema Design (T1)
-    ├── Users Table (T2) ──→ Memories Table (T6)
-    ├── Plans Table (T3) ──→ Sets Table (T5)
-    ├── Exercises Table (T4) ──→ Sets Table (T5)
+✅ Schema Design (T1)
+    ├── ✅ Users Table (T2) ──→ ✅ Memories Table (T6)
+    ├── ✅ Plans Table (T3) ──→ ✅ Sets Table (T5)
+    ├── ✅ Exercises Table (T4) ──→ ✅ Sets Table (T5)
     └── Documentation (T10)
 
-JWT Flow Design (T7) ──→ JWT Implementation (T8) ──→ Protected Endpoint (T9)
+🏃 JWT Flow Design (T7) ──→ JWT Implementation (T8) ──→ Protected Endpoint (T9)
 ```
 
+**Legend:** ✅ = Completed, 🏃 = In Progress
+
 ### External Dependencies
-- **Prerequisite**: Supabase project must exist
-- **Prerequisite**: pgvector extension must be enabled
-- **Input Needed**: Supabase service role key for JWT validation
+- **Prerequisite**: ✅ Supabase project must exist (COMPLETED)
+- **Prerequisite**: ✅ pgvector extension must be enabled (COMPLETED with HNSW indexing)
+- **Input Needed**: ⏳ Supabase service role key for JWT validation (Needed for Task 8)
 
 ## **Sprint 3: Plan Creation**
 
 ### Dependencies from Sprint 2
-- ✅ Required: Users Table (Sprint 2, Task 2)
-- ✅ Required: Plans Table (Sprint 2, Task 3)
-- ✅ Required: JWT Validation (Sprint 2, Task 8)
+- ✅ Required: Users Table (Sprint 2, Task 2) - COMPLETED
+- ✅ Required: Plans Table (Sprint 2, Task 3) - COMPLETED
+- ⏳ Required: JWT Validation (Sprint 2, Task 8) - IN PROGRESS
 
 ### Will Enable
 - Sprint 4: Workout Logging (requires Plans endpoints)
@@ -34,9 +36,9 @@ JWT Flow Design (T7) ──→ JWT Implementation (T8) ──→ Protected Endpo
 ## **Sprint 4: Workout Logging**
 
 ### Dependencies from Previous Sprints
-- ✅ Required: Sets Table (Sprint 2, Task 5)
-- ✅ Required: Plans endpoints (Sprint 3)
-- ✅ Required: Authentication (Sprint 2, Task 8)
+- ✅ Required: Sets Table (Sprint 2, Task 5) - COMPLETED
+- ⏳ Required: Plans endpoints (Sprint 3)
+- ⏳ Required: Authentication (Sprint 2, Task 8) - IN PROGRESS
 
 ### Will Enable
 - Sprint 7: Affinity system (needs workout completion data)
@@ -44,8 +46,8 @@ JWT Flow Design (T7) ──→ JWT Implementation (T8) ──→ Protected Endpo
 ## **Sprint 5: Exercise Library**
 
 ### Dependencies from Previous Sprints
-- ✅ Required: Exercises Table (Sprint 2, Task 4)
-- ✅ Required: Authentication (Sprint 2, Task 8)
+- ✅ Required: Exercises Table (Sprint 2, Task 4) - COMPLETED
+- ⏳ Required: Authentication (Sprint 2, Task 8) - IN PROGRESS
 
 ### Will Enable
 - Enhanced workout planning in frontend
@@ -54,9 +56,9 @@ JWT Flow Design (T7) ──→ JWT Implementation (T8) ──→ Protected Endpo
 ## **Sprint 6: AI - Chat Interface & Semantic Memory**
 
 ### Dependencies from Previous Sprints
-- ✅ Required: Memories Table with vectors (Sprint 2, Task 6)
-- ✅ Required: Users Table (Sprint 2, Task 2)
-- ✅ Required: Authentication (Sprint 2, Task 8)
+- ✅ Required: Memories Table with vectors (Sprint 2, Task 6) - COMPLETED
+- ✅ Required: Users Table (Sprint 2, Task 2) - COMPLETED
+- ⏳ Required: Authentication (Sprint 2, Task 8) - IN PROGRESS
 
 ### External Dependencies
 - **Required**: Google Gemini API key
@@ -68,9 +70,9 @@ JWT Flow Design (T7) ──→ JWT Implementation (T8) ──→ Protected Endpo
 ## **Sprint 7: AI - Affinity System**
 
 ### Dependencies from Previous Sprints
-- ✅ Required: Workout logging (Sprint 4)
-- ✅ Required: Chat interface (Sprint 6)
-- ✅ Required: Users Table with affinity_score (Sprint 2, Task 2)
+- ⏳ Required: Workout logging (Sprint 4)
+- ⏳ Required: Chat interface (Sprint 6)
+- ✅ Required: Users Table with affinity_score (Sprint 2, Task 2) - COMPLETED
 
 ### Will Enable
 - Personalized AI responses based on user engagement
@@ -107,12 +109,12 @@ Tasks that can be worked on simultaneously:
 
 ## **Blocker Risks**
 
-1. **Supabase Setup**: If delayed, blocks all of Sprint 2
-2. **pgvector Issues**: Would block Sprint 6 AI features
+1. **Supabase Setup**: ✅ RESOLVED - Setup completed successfully
+2. **pgvector Issues**: ✅ RESOLVED - Enabled with HNSW indexing
 3. **Gemini API Access**: Would block Sprint 6-7
 4. **Authentication Problems**: Would cascade to all protected endpoints
 
 ---
 
-*Last Updated: January 27, 2025*  
+*Last Updated: January 30, 2025*  
 *This is a living document - update as dependencies change*

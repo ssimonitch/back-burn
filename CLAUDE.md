@@ -73,8 +73,10 @@ The project uses structured sprint planning located in `docs/planning/`:
 
 Current sprint information:
 - **Sprint 1**: ✅ Foundation & Setup (Complete)
-- **Sprint 2**: 🏃 Authentication & Database Schema (In Progress)
-- Focus: Database schema design, JWT validation, and Supabase setup
+- **Sprint 2**: 🏃 Authentication & Database Schema (60% Complete)
+  - ✅ Database schema fully implemented with production-ready features
+  - 🏃 Currently working on: JWT validation flow design
+  - Next: JWT implementation and protected endpoints
 
 ## Important Context
 
@@ -94,13 +96,29 @@ When implementing chat endpoints:
 6. Update affinity score if applicable
 7. Return response to frontend
 
-### Database Schema (Sprint 2)
-Core tables being implemented:
-- **Users**: Profile data with affinity_score
-- **Plans**: Workout plan templates
-- **Exercises**: Exercise library with metadata
-- **Sets**: Workout performance logs with relationships to Plans/Exercises
-- **Memories**: AI conversation history with vector embeddings (pgvector)
+### Database Schema (Sprint 2 - Completed)
+All core tables have been implemented with production-ready features:
+
+#### Core Tables:
+- **Users**: Profile data with affinity_score, preferences (JSONB), fitness level
+- **Plans**: Workout plan templates with versioning system and public/private sharing
+- **Exercises**: Comprehensive exercise library with biomechanical classification
+- **Workout_sessions**: Actual workout instances with RPE and wellness tracking
+- **Sets**: Detailed performance logs with volume calculations, tempo, RIR, and form quality
+- **Memories**: AI conversation history with halfvec(3072) embeddings for semantic search
+- **Conversations**: Chat session management for AI interactions
+
+#### Supporting Tables:
+- **Reference tables**: movement_patterns, muscle_groups, equipment_types, training_styles
+- **Junction tables**: exercise_movement_patterns, exercise_muscles, exercise_training_styles
+- **Relationships**: exercise_relationships for variations and progressions
+
+#### Key Features Implemented:
+- pgvector with HNSW indexing for fast similarity search
+- Row-level security (RLS) policies on all tables
+- Foreign key indexes for performance optimization
+- Database functions: search_memories(), increment_affinity_score()
+- Automatic updated_at triggers where applicable
 
 ### Database Considerations
 - Never expose database credentials to frontend
@@ -114,6 +132,21 @@ Core tables being implemented:
 - Validate all incoming data with Pydantic models
 - Implement proper CORS policies before deployment
 
+## Supabase Local Development
+
+### Setup and Commands:
+- `supabase start` - Start local Supabase stack (PostgreSQL, Auth, etc.)
+- `supabase stop` - Stop local Supabase stack
+- `supabase db reset` - Reset database and rerun all migrations
+- `supabase migration new <name>` - Create new migration file
+- `supabase migration list` - View all migrations and their status
+
+### Migration Files:
+All database migrations are in `supabase/migrations/`:
+- Migrations run in alphabetical order by timestamp
+- Each migration should be idempotent when possible
+- RLS policies and indexes are in separate migration files for clarity
+
 ## Development Workflow
 
 1. Always run `poe check` before committing code
@@ -121,3 +154,7 @@ Core tables being implemented:
 3. Write tests for new functionality
 4. Follow existing code patterns and conventions
 5. Update sprint documentation in docs/planning/ as tasks are completed
+6. When working with database:
+   - Test migrations locally with `supabase db reset`
+   - Check Supabase Dashboard for any performance/security warnings
+   - Ensure RLS policies are properly enabled on new tables
