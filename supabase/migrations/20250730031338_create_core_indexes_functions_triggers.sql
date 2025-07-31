@@ -46,7 +46,7 @@ AS $$
 DECLARE
     new_score INTEGER;
 BEGIN
-    UPDATE public.users 
+    UPDATE public.profiles 
     SET affinity_score = affinity_score + p_points
     WHERE id = p_user_id
     RETURNING affinity_score INTO new_score;

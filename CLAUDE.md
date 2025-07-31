@@ -4,29 +4,29 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Development Commands
 
-This project uses `poethepoet` (poe) as a task runner. All commands should be run with `poe`:
+This project uses `poethepoet` (poe) as a task runner. All commands should be run with `uv run poe`:
 
 ### Core Development Commands
-- `poe dev` - Run the FastAPI development server with hot reload
-- `poe run` - Run the FastAPI production server
+- `uv run poe dev` - Run the FastAPI development server with hot reload
+- `uv run poe run` - Run the FastAPI production server
 
 ### Code Quality Commands
-- `poe format` - Format code using Black
-- `poe format-check` - Check code formatting without making changes
-- `poe lint` - Run Ruff linter to check for issues
-- `poe lint-fix` - Run Ruff linter and automatically fix issues
-- `poe typecheck` - Run MyPy type checking
+- `uv run poe format` - Format code using Black
+- `uv run poe format-check` - Check code formatting without making changes
+- `uv run poe lint` - Run Ruff linter to check for issues
+- `uv run poe lint-fix` - Run Ruff linter and automatically fix issues
+- `uv run poe typecheck` - Run MyPy type checking
 
 ### Testing Commands
-- `poe test` - Run all tests with pytest
-- `poe test-cov` - Run tests with coverage report
-- `poe test-verbose` - Run tests with verbose output
+- `uv run poe test` - Run all tests with pytest
+- `uv run poe test-cov` - Run tests with coverage report
+- `uv run poe test-verbose` - Run tests with verbose output
 - Run a single test: `pytest tests/test_main.py::test_root_endpoint`
 
 ### Combined Commands
-- `poe check` - Run lint, typecheck, and format-check (use before committing)
-- `poe fix` - Run format and lint-fix to auto-fix issues
-- `poe ci` - Run full CI suite: lint, typecheck, format-check, and test-cov
+- `uv run poe check` - Run lint, typecheck, and format-check (use before committing)
+- `uv run poe fix` - Run format and lint-fix to auto-fix issues
+- `uv run poe ci` - Run full CI suite: lint, typecheck, format-check, and test-cov
 
 ## Architecture Overview
 
@@ -73,18 +73,23 @@ The project uses structured sprint planning located in `docs/planning/`:
 
 Current sprint information:
 - **Sprint 1**: ✅ Foundation & Setup (Complete)
-- **Sprint 2**: 🏃 Authentication & Database Schema (60% Complete)
+- **Sprint 2**: 🏃 Authentication & Database Schema (90% Complete)
   - ✅ Database schema fully implemented with production-ready features
-  - 🏃 Currently working on: JWT validation flow design
-  - Next: JWT implementation and protected endpoints
+  - ✅ JWT authentication flow fully implemented with JWKS validation
+  - ✅ Protected endpoints created with comprehensive test coverage
+  - 🏃 Last task remaining: Document database relationships
 
 ## Important Context
 
-### Authentication Flow
+### Authentication Flow (Sprint 2 - Completed)
 - Frontend handles authentication directly with Supabase
 - Backend receives JWT tokens in Authorization header
-- Backend validates JWTs with Supabase to extract user_id
-- All protected endpoints require valid JWT
+- Backend validates JWTs using JWKS public key verification (src/core/auth.py)
+- Automatic key rotation handling with 10-minute cache TTL
+- Fallback to Supabase API validation for reliability
+- All protected endpoints use require_auth dependency
+- Optional authentication available with optional_auth dependency
+- UserContext model provides typed access to authenticated user data
 
 ### AI Integration Architecture
 When implementing chat endpoints:

@@ -30,6 +30,25 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Function to handle new user creation from auth.users
+-- Automatically creates a profile entry when a new user signs up
+-- SECURITY: Uses empty search_path to prevent search path manipulation attacks
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+    INSERT INTO public.profiles (id, username, full_name)
+    VALUES (
+        NEW.id,
+        COALESCE(NEW.raw_user_meta_data->>'username', split_part(NEW.email, '@', 1)),
+        COALESCE(NEW.raw_user_meta_data->>'full_name', '')
+    );
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
 -- =============================================================================
 -- REFERENCE TABLES (no dependencies)
 -- =============================================================================
@@ -97,8 +116,8 @@ COMMENT ON COLUMN public.training_styles.focus_description IS 'Primary focus and
 -- CORE USER TABLES
 -- =============================================================================
 
--- Users table (extends Supabase auth.users)
-CREATE TABLE IF NOT EXISTS public.users (
+-- Profiles table (extends Supabase auth.users)
+CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     username TEXT UNIQUE NOT NULL,
     full_name TEXT,
@@ -111,13 +130,13 @@ CREATE TABLE IF NOT EXISTS public.users (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-COMMENT ON TABLE public.users IS 'User profiles extending Supabase auth with fitness-specific data and AI companion affinity';
-COMMENT ON COLUMN public.users.id IS 'Foreign key to auth.users - same user across Supabase auth and application';
-COMMENT ON COLUMN public.users.username IS 'Unique display name chosen by user for app identification';
-COMMENT ON COLUMN public.users.affinity_score IS 'Tracks user engagement with AI companion, incremented by workout completion and positive interactions';
-COMMENT ON COLUMN public.users.goals IS 'Array of user fitness goals (e.g., "lose_weight", "build_muscle", "improve_endurance")';
-COMMENT ON COLUMN public.users.preferences IS 'JSONB object storing user preferences for workouts, AI personality, units, etc.';
-COMMENT ON COLUMN public.users.fitness_level IS 'Self-reported fitness level used for exercise and plan recommendations';
+COMMENT ON TABLE public.profiles IS 'User profiles extending Supabase auth with fitness-specific data and AI companion affinity';
+COMMENT ON COLUMN public.profiles.id IS 'Foreign key to auth.users - same user across Supabase auth and application';
+COMMENT ON COLUMN public.profiles.username IS 'Unique display name chosen by user for app identification';
+COMMENT ON COLUMN public.profiles.affinity_score IS 'Tracks user engagement with AI companion, incremented by workout completion and positive interactions';
+COMMENT ON COLUMN public.profiles.goals IS 'Array of user fitness goals (e.g., "lose_weight", "build_muscle", "improve_endurance")';
+COMMENT ON COLUMN public.profiles.preferences IS 'JSONB object storing user preferences for workouts, AI personality, units, etc.';
+COMMENT ON COLUMN public.profiles.fitness_level IS 'Self-reported fitness level used for exercise and plan recommendations';
 
 -- =============================================================================
 -- ENHANCED EXERCISE SYSTEM
@@ -226,7 +245,7 @@ COMMENT ON COLUMN public.exercise_relationships.notes IS 'Additional context abo
 -- Plans table (workout plan templates)
 CREATE TABLE IF NOT EXISTS public.plans (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     description TEXT,
     goal TEXT,
@@ -282,7 +301,7 @@ COMMENT ON COLUMN public.plan_exercises.rest_seconds IS 'Recommended rest period
 -- Workout_sessions table (actual workout instances) with enhanced tracking
 CREATE TABLE IF NOT EXISTS public.workout_sessions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
     plan_id UUID REFERENCES public.plans(id) ON DELETE SET NULL,
     started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     completed_at TIMESTAMPTZ,
@@ -371,7 +390,7 @@ COMMENT ON COLUMN public.sets.technique_cues IS 'Array of coaching cues or techn
 -- Conversations table (AI chat sessions)
 CREATE TABLE IF NOT EXISTS public.conversations (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
     started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     ended_at TIMESTAMPTZ,
     context JSONB DEFAULT '{}',
@@ -387,7 +406,7 @@ COMMENT ON COLUMN public.conversations.context IS 'Session context like conversa
 -- Memories table (AI semantic memory with vector embeddings)
 CREATE TABLE IF NOT EXISTS public.memories (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
     conversation_id UUID REFERENCES public.conversations(id) ON DELETE CASCADE,
     content TEXT NOT NULL,
     embedding extensions.halfvec(3072),
@@ -410,7 +429,7 @@ COMMENT ON COLUMN public.memories.metadata IS 'Additional memory context like em
 -- =============================================================================
 
 -- Enable RLS on core tables
-ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.exercises ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.plans ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.plan_exercises ENABLE ROW LEVEL SECURITY;
@@ -438,8 +457,8 @@ ALTER TABLE public.exercise_relationships ENABLE ROW LEVEL SECURITY;
 -- Create triggers for all tables with updated_at columns
 -- These automatically update the updated_at timestamp when any row is modified
 
-CREATE TRIGGER update_users_updated_at 
-    BEFORE UPDATE ON public.users
+CREATE TRIGGER update_profiles_updated_at 
+    BEFORE UPDATE ON public.profiles
     FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 CREATE TRIGGER update_exercises_updated_at 
@@ -461,3 +480,12 @@ CREATE TRIGGER update_conversations_updated_at
 CREATE TRIGGER update_memories_updated_at 
     BEFORE UPDATE ON public.memories
     FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+-- =============================================================================
+-- TRIGGER FOR AUTOMATIC PROFILE CREATION
+-- =============================================================================
+
+-- Create trigger on auth.users to automatically create profile entries
+CREATE TRIGGER on_auth_user_created
+    AFTER INSERT ON auth.users
+    FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();

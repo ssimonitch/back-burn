@@ -19,7 +19,7 @@ The backend is the engine of the application, responsible for all business logic
 Our backend stack is chosen for performance, scalability, and its first-class AI/ML ecosystem.
 
 * **Framework:** **FastAPI** (for its high performance and automatic data validation)  
-* **Language:** **Python 3.11+**  
+* **Language:** **Python 3.12+**  
 * **Package Manager/Virtual Env:** **uv** (for its speed and modern dependency resolution)  
 * **Linting/Formatting:** **Ruff** (as an all-in-one, high-speed linter and formatter)  
 * **Data Validation:** **Pydantic** (integrated natively into FastAPI)  

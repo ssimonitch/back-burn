@@ -1,11 +1,11 @@
--- Users table policies
-CREATE POLICY "Users can view own profile" ON public.users
+-- Profiles table policies
+CREATE POLICY "Users can view own profile" ON public.profiles
     FOR SELECT USING ((SELECT auth.uid()) = id);
 
-CREATE POLICY "Users can update own profile" ON public.users
+CREATE POLICY "Users can update own profile" ON public.profiles
     FOR UPDATE USING ((SELECT auth.uid()) = id);
 
-CREATE POLICY "Users can insert own profile" ON public.users
+CREATE POLICY "Users can insert own profile" ON public.profiles
     FOR INSERT WITH CHECK ((SELECT auth.uid()) = id);
 
 -- Exercises table policies (public read for all authenticated users)
