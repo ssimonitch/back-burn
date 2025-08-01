@@ -73,11 +73,11 @@ The project uses structured sprint planning located in `docs/planning/`:
 
 Current sprint information:
 - **Sprint 1**: ✅ Foundation & Setup (Complete)
-- **Sprint 2**: 🏃 Authentication & Database Schema (90% Complete)
+- **Sprint 2**: ✅ Authentication & Database Schema (Complete)
   - ✅ Database schema fully implemented with production-ready features
   - ✅ JWT authentication flow fully implemented with JWKS validation
   - ✅ Protected endpoints created with comprehensive test coverage
-  - 🏃 Last task remaining: Document database relationships
+  - ✅ Database relationships documented in docs/01_database.md
 
 ## Important Context
 
@@ -154,11 +154,11 @@ All database migrations are in `supabase/migrations/`:
 
 ## Development Workflow
 
-1. Always run `poe check` before committing code
-2. Fix any issues with `poe fix`
+1. Always run `uv run poe check` before committing code
+2. Fix any issues with `uv run poe fix`
 3. Write tests for new functionality
 4. Follow existing code patterns and conventions
-5. Update sprint documentation in docs/planning/ as tasks are completed
+5. Use `@agent-sprint-manager` to update sprint documentation in docs/planning/ as tasks are completed
 6. When working with database:
    - Test migrations locally with `supabase db reset`
    - Check Supabase Dashboard for any performance/security warnings

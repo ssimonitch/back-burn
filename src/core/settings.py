@@ -14,7 +14,6 @@ from pydantic_settings import BaseSettings
 
 class AppEnvironment(StrEnum):
     development = "development"
-    shadow = "shadow"
     staging = "staging"
     production = "production"
 
