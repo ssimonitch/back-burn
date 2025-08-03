@@ -1,5 +1,9 @@
--- Enable required PostgreSQL extensions with security best practices
--- Extensions are installed in a dedicated schema for better security isolation
+-- =============================================================================
+-- EXTENSIONS SETUP
+-- =============================================================================
+-- PostgreSQL extensions required for the Slow Burn application
+-- This must be loaded first as other schemas depend on these extensions
+-- =============================================================================
 
 -- Create a dedicated schema for extensions to avoid polluting the public schema
 CREATE SCHEMA IF NOT EXISTS extensions;

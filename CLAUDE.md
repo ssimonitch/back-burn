@@ -176,14 +176,73 @@ class TrainingStyle(StrEnum):
 - `supabase start` - Start local Supabase stack (PostgreSQL, Auth, etc.)
 - `supabase stop` - Stop local Supabase stack
 - `supabase db reset` - Reset database and rerun all migrations
-- `supabase migration new <name>` - Create new migration file
+- `supabase db diff -f <description>` - Generate migration from schema changes
 - `supabase migration list` - View all migrations and their status
 
-### Migration Files:
-All database migrations are in `supabase/migrations/`:
-- Migrations run in alphabetical order by timestamp
-- Each migration should be idempotent when possible
-- RLS policies and indexes are in separate migration files for clarity
+### Declarative Schema Management (New Workflow):
+The project uses **declarative database schemas** for better maintainability and AI collaboration.
+
+#### Schema Files:
+All declarative schemas are in `supabase/schemas/` (source of truth), organized one file per table:
+- `00_extensions.sql` - PostgreSQL extensions (uuid-ossp, pgvector)
+- `10_movement_patterns.sql` - Movement patterns reference table
+- `11_muscle_groups.sql` - Muscle groups reference table
+- `12_equipment_types.sql` - Equipment types reference table
+- `13_training_styles.sql` - Training styles reference table
+- `20_profiles.sql` - User profiles + handle_new_user function + increment_affinity_score
+- `30_exercises.sql` - Exercises table with indexes
+- `31_exercise_movement_patterns.sql` - Exercise-movement junction table
+- `32_exercise_muscles.sql` - Exercise-muscle junction table
+- `33_exercise_training_styles.sql` - Exercise-training style junction
+- `34_exercise_relationships.sql` - Exercise relationships
+- `40_plans.sql` - Workout plans table
+- `41_plan_exercises.sql` - Plan exercises junction
+- `50_workout_sessions.sql` - Workout session tracking
+- `51_sets.sql` - Individual set tracking
+- `60_conversations.sql` - AI conversation sessions
+- `61_memories.sql` - AI memories + search_memories function
+- `90_shared_functions.sql` - Cross-table functions (update_updated_at)
+- `91_shared_triggers.sql` - All update_updated_at triggers
+
+**Note**: RLS policies are in `migrations/20250803191436_rls_policies.sql` due to Supabase limitations
+
+#### Development Workflow:
+1. **Making Schema Changes**:
+   - Edit the appropriate schema file directly in `supabase/schemas/`
+   - Regenerate the combined migration: `cat supabase/schemas/*.sql > supabase/migrations/20250803191435_initial_schema.sql`
+   - Test locally with `supabase db reset`
+   - For production changes, use `supabase db diff -f descriptive_name` to generate incremental migrations
+   - Commit both the schema file changes and any new migrations
+
+2. **Example Workflow**:
+   ```bash
+   # Edit schema file (e.g., add column to profiles table)
+   # Edit: supabase/schemas/20_profiles.sql
+   
+   # Regenerate combined migration for local development
+   cat supabase/schemas/*.sql > supabase/migrations/20250803191435_initial_schema.sql
+   
+   # Test the changes locally
+   supabase db reset
+   
+   # For production, generate incremental migration
+   supabase db diff -f add_user_timezone
+   
+   # Review generated migration and commit
+   ```
+
+3. **Benefits**:
+   - See complete schema at a glance
+   - Easier refactoring and code reviews
+   - Better AI assistant collaboration
+   - Maintains migration history for deployments
+
+#### Migration Files:
+Generated migrations are in `supabase/migrations/`:
+- Auto-generated from schema diffs
+- Provide deployment mechanism and history
+- Run in alphabetical order by timestamp
+- Data migrations still written imperatively when needed
 
 ## Development Workflow
 

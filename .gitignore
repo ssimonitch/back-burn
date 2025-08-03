@@ -228,3 +228,7 @@ mkdocs.yml
 # Test tokens (never commit auth tokens)
 test_token.txt
 *.token
+
+# Claude temp
+.claude/temp
+docs/temp
