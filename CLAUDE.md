@@ -137,6 +137,39 @@ All core tables have been implemented with production-ready features:
 - Validate all incoming data with Pydantic models
 - Implement proper CORS policies before deployment
 
+## Pydantic Best Practices
+
+### Type Safety with Enums
+- Use `StrEnum` (Python 3.11+) for categorical fields instead of plain strings
+- Define enums in `src/models/enums.py` for reusability across models
+- Benefits: Type safety, IDE autocomplete, automatic API documentation
+
+Example:
+```python
+from enum import StrEnum
+
+class TrainingStyle(StrEnum):
+    POWERLIFTING = "powerlifting"
+    BODYBUILDING = "bodybuilding"
+```
+
+### Field Validation
+- Use Pydantic's built-in field constraints over custom validators when possible
+- Prefer `Field(min_length=1, max_length=100)` over `constr()` annotations
+- Use `Field(gt=0, le=52)` for numeric constraints instead of `conint()`
+- Only write custom validators for complex business logic
+
+### Model Configuration
+- Use `use_enum_values=True` for automatic enum serialization
+- Enable `str_strip_whitespace=True` for automatic string cleaning
+- Set `extra="forbid"` to catch typos and unexpected fields early
+- Use `validate_assignment=True` for runtime validation of field updates
+
+### Field Documentation
+- Only add descriptions for complex fields that need explanation
+- Remove redundant descriptions for self-explanatory fields (id, name, created_at)
+- Keep descriptions for business-critical fields (metadata, version_number)
+
 ## Supabase Local Development
 
 ### Setup and Commands:
