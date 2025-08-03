@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS public.plans (
     user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     description TEXT,
+    training_style TEXT REFERENCES public.training_styles(name) ON DELETE RESTRICT,
     goal TEXT,
     difficulty_level TEXT CHECK (difficulty_level IN ('beginner', 'intermediate', 'advanced')),
     duration_weeks INTEGER CHECK (duration_weeks > 0),
@@ -30,6 +31,7 @@ CREATE TABLE IF NOT EXISTS public.plans (
 CREATE INDEX IF NOT EXISTS idx_plans_user_id ON public.plans(user_id);
 CREATE INDEX IF NOT EXISTS idx_plans_is_public ON public.plans(is_public) WHERE is_public = true;
 CREATE INDEX IF NOT EXISTS idx_plans_parent ON public.plans(parent_plan_id);
+CREATE INDEX IF NOT EXISTS idx_plans_training_style ON public.plans(training_style);
 
 -- Enable RLS (policies defined in migrations)
 ALTER TABLE public.plans ENABLE ROW LEVEL SECURITY;
@@ -39,6 +41,7 @@ ALTER TABLE public.plans ENABLE ROW LEVEL SECURITY;
 -- =============================================================================
 
 COMMENT ON TABLE public.plans IS 'Versioned workout plan templates that can be followed by users or shared publicly. Plans are immutable once created - modifications create new versions.';
+COMMENT ON COLUMN public.plans.training_style IS 'Primary training style/methodology for this plan (references training_styles.name)';
 COMMENT ON COLUMN public.plans.goal IS 'Primary training goal this plan targets (e.g., "strength", "hypertrophy", "weight_loss")';
 COMMENT ON COLUMN public.plans.duration_weeks IS 'Planned duration in weeks before progression or plan change';
 COMMENT ON COLUMN public.plans.days_per_week IS 'Intended training frequency per week';

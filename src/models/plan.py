@@ -126,8 +126,9 @@ class PlanResponseModel(BaseModel):
     user_id: UUID
     name: str
     description: str | None = None
-    training_style: str = Field(
-        ..., description="Primary training style/methodology for this plan"
+    # TODO: Make required once training_style column is added to plans table
+    training_style: str | None = Field(
+        None, description="Primary training style/methodology for this plan"
     )
     goal: str | None = None
     difficulty_level: str | None = None

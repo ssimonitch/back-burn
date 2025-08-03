@@ -6,11 +6,15 @@ and managing workout plans. Plans are versioned and immutable - updates
 create new versions rather than modifying existing plans.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from src.core.auth import JWTPayload, require_auth
 from src.core.utils import get_supabase_client
-from src.models.plan import PlanCreateModel, PlanResponseModel
+from src.models.plan import (
+    PlanCreateModel,
+    PlanListResponseModel,
+    PlanResponseModel,
+)
 from supabase import Client
 
 router = APIRouter(prefix="/api/v1/plans", tags=["plans"])
@@ -99,6 +103,11 @@ async def create_plan(
         plan_dict["version_number"] = 1
         plan_dict["is_active"] = True
 
+        # TODO: Remove this once training_style column is added to plans table
+        # Temporarily remove training_style from the dict as the column doesn't exist yet
+        if "training_style" in plan_dict:
+            plan_dict.pop("training_style")
+
         # Convert training_style enum to string value if needed
         # (Pydantic with use_enum_values=True should handle this automatically)
 
@@ -168,3 +177,141 @@ async def create_plan(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to create plan due to an internal error",
             )
+
+
+@router.get(
+    "/",
+    response_model=PlanListResponseModel,
+    status_code=status.HTTP_200_OK,
+    summary="Get user's workout plans",
+    responses={
+        200: {
+            "description": "List of plans retrieved successfully",
+            "model": PlanListResponseModel,
+        },
+        401: {
+            "description": "Authentication required",
+            "content": {
+                "application/json": {"example": {"detail": "Not authenticated"}}
+            },
+        },
+        422: {
+            "description": "Validation error",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": [
+                            {
+                                "loc": ["query", "limit"],
+                                "msg": "ensure this value is greater than 0",
+                                "type": "value_error.number.not_gt",
+                            }
+                        ]
+                    }
+                }
+            },
+        },
+        500: {
+            "description": "Internal server error",
+            "content": {
+                "application/json": {"example": {"detail": "Failed to retrieve plans"}}
+            },
+        },
+    },
+)
+async def get_plans(
+    limit: int = Query(
+        default=20,
+        gt=0,
+        le=100,
+        description="Maximum number of plans to return (1-100)",
+    ),
+    offset: int = Query(
+        default=0,
+        ge=0,
+        description="Number of plans to skip for pagination",
+    ),
+    # TODO: Re-enable once training_style column is added to plans table
+    # from src.models.enums import TrainingStyle
+    # from typing import Optional
+    # training_style: Optional[TrainingStyle] = Query(
+    #     default=None,
+    #     description="Filter plans by training style",
+    # ),
+    jwt_payload: JWTPayload = Depends(require_auth),
+    supabase: Client = Depends(get_supabase_client),
+) -> PlanListResponseModel:
+    """
+    Retrieve a paginated list of the authenticated user's workout plans.
+
+    Returns a paginated list of plans filtered by the authenticated user's ID (via RLS).
+    Plans are sorted by updated_at DESC to show most recently modified plans first.
+    If no plans exist for the user, returns an empty array.
+
+    Args:
+        limit: Maximum number of plans to return (1-100, default: 20)
+        offset: Number of plans to skip for pagination (default: 0)
+        jwt_payload: The authenticated user's JWT payload
+        supabase: The Supabase client instance
+
+    Returns:
+        PlanListResponseModel containing the plans array and pagination metadata
+
+    Raises:
+        HTTPException: If plan retrieval fails due to database errors
+    """
+    try:
+        # Build the base query for the user's plans
+        # RLS policies ensure we only get plans for the authenticated user
+        query = supabase.table("plans").select("*", count="exact")
+
+        # TODO: Re-enable training_style filter once column is added to plans table
+        # Apply training style filter if provided
+        # if training_style:
+        #     query = query.eq("training_style", training_style.value)
+
+        # Apply sorting by created_at DESC (most recent first)
+        # Note: Plans are immutable - new versions are created instead of updates
+        query = query.order("created_at", desc=True)
+
+        # Apply pagination
+        query = query.range(offset, offset + limit - 1)
+
+        # Execute the query
+        response = query.execute()
+
+        # Extract the plans and total count
+        plans = response.data if response.data else []
+        total_count = response.count if response.count is not None else 0
+
+        # Calculate pagination metadata
+        page = (offset // limit) + 1
+        has_next = (offset + limit) < total_count
+
+        # Convert plan data to response models
+        plan_models = [PlanResponseModel(**plan) for plan in plans]
+
+        # Return the paginated response
+        return PlanListResponseModel(
+            plans=plan_models,
+            total_count=total_count,
+            page=page,
+            page_size=limit,
+            has_next=has_next,
+        )
+
+    except ValueError as ve:
+        # Handle validation errors
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(ve),
+        )
+    except Exception:
+        # Handle unexpected errors
+        # Log the error in production
+        # logger.error(f"Failed to retrieve plans: {str(e)}")
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve plans due to an internal error",
+        )

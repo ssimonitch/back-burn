@@ -1,6 +1,8 @@
 """Comprehensive tests for the plans API endpoints.
 
-This module tests the POST /api/v1/plans endpoint functionality including:
+This module tests both POST and GET /api/v1/plans endpoint functionality including:
+
+POST /api/v1/plans (Plan Creation):
 - Successful plan creation with valid data
 - Authentication requirements (401 errors)
 - Request validation (422 errors)
@@ -8,6 +10,16 @@ This module tests the POST /api/v1/plans endpoint functionality including:
 - Duplicate plan names (409 errors)
 - Database error handling (500 errors)
 - Edge cases and boundary values
+
+GET /api/v1/plans (Plan Retrieval):
+- Successful retrieval with multiple plans and pagination
+- Empty response for users with no plans
+- Authentication requirements (401/403 errors)
+- Query parameter validation (422 errors)
+- Sorting verification (most recent first)
+- Database error handling (500 errors)
+- Boundary values for pagination parameters
+- Complex metadata and unicode content handling
 """
 
 from unittest.mock import MagicMock
@@ -989,3 +1001,675 @@ def test_create_plan_all_difficulty_levels(
         assert response.status_code == status.HTTP_201_CREATED
         response_data = response.json()
         assert response_data["difficulty_level"] == difficulty_level.value
+
+
+# ============================================================================
+# GET PLANS ENDPOINT TESTS
+# ============================================================================
+
+
+@pytest.fixture
+def mock_plans_list(mock_user_id):
+    """Mock database response for successful plans retrieval with multiple plans."""
+
+    return [
+        {
+            "id": str(uuid4()),
+            "user_id": mock_user_id,
+            "name": "Latest Plan",
+            "description": "Most recent plan",
+            "training_style": None,  # Column doesn't exist yet
+            "goal": "strength",
+            "difficulty_level": "intermediate",
+            "duration_weeks": 12,
+            "days_per_week": 4,
+            "is_public": False,
+            "metadata": {"notes": "updated plan"},
+            "version_number": 1,
+            "parent_plan_id": None,
+            "is_active": True,
+            "created_at": "2025-01-03T12:00:00+00:00",
+        },
+        {
+            "id": str(uuid4()),
+            "user_id": mock_user_id,
+            "name": "Older Plan",
+            "description": "Earlier created plan",
+            "training_style": None,
+            "goal": "hypertrophy",
+            "difficulty_level": "beginner",
+            "duration_weeks": 8,
+            "days_per_week": 3,
+            "is_public": True,
+            "metadata": {},
+            "version_number": 1,
+            "parent_plan_id": None,
+            "is_active": True,
+            "created_at": "2025-01-01T12:00:00+00:00",
+        },
+    ]
+
+
+@pytest.fixture
+def mock_get_supabase_client_for_get():
+    """Mock Supabase client specifically configured for GET plans endpoint."""
+    from src.core.utils import get_supabase_client
+
+    # Create a single mock client instance with proper method chaining
+    mock_client = MagicMock()
+    mock_table = MagicMock()
+    mock_select = MagicMock()
+    mock_order = MagicMock()
+    mock_range = MagicMock()
+    mock_execute = MagicMock()
+
+    # Set up the method chain: client.table().select().order().range().execute()
+    mock_client.table.return_value = mock_table
+    mock_table.select.return_value = mock_select
+    mock_select.order.return_value = mock_order
+    mock_order.range.return_value = mock_range
+    mock_range.execute.return_value = mock_execute
+
+    # Override the dependency to return the same instance
+    def mock_get_supabase_client():
+        return mock_client
+
+    app.dependency_overrides[get_supabase_client] = mock_get_supabase_client
+
+    yield mock_client
+
+    # Clean up the override after the test
+    if get_supabase_client in app.dependency_overrides:
+        del app.dependency_overrides[get_supabase_client]
+
+
+# ============================================================================
+# SUCCESS TESTS - GET PLANS
+# ============================================================================
+
+
+def test_get_plans_success_with_multiple_plans(
+    mock_auth_dependency, mock_get_supabase_client_for_get, mock_plans_list
+):
+    """Test successful retrieval of multiple plans with default pagination."""
+    # Configure mock response with multiple plans
+    mock_response = MagicMock()
+    mock_response.data = mock_plans_list
+    mock_response.count = 2
+    mock_get_supabase_client_for_get.table().select().order().range().execute.return_value = mock_response
+
+    # Make the request
+    response = client.get(
+        "/api/v1/plans/",
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    # Assert response
+    assert response.status_code == status.HTTP_200_OK
+    response_data = response.json()
+
+    # Verify response structure
+    assert "plans" in response_data
+    assert "total_count" in response_data
+    assert "page" in response_data
+    assert "page_size" in response_data
+    assert "has_next" in response_data
+
+    # Verify pagination metadata
+    assert response_data["total_count"] == 2
+    assert response_data["page"] == 1
+    assert response_data["page_size"] == 20  # Default limit
+    assert response_data["has_next"] is False
+
+    # Verify plans data
+    plans = response_data["plans"]
+    assert len(plans) == 2
+
+    # Verify first plan (should be most recent - Latest Plan)
+    latest_plan = plans[0]
+    assert latest_plan["name"] == "Latest Plan"
+    assert latest_plan["description"] == "Most recent plan"
+    assert latest_plan["goal"] == "strength"
+    assert latest_plan["difficulty_level"] == "intermediate"
+    assert latest_plan["duration_weeks"] == 12
+    assert latest_plan["days_per_week"] == 4
+    assert latest_plan["is_public"] is False
+    assert latest_plan["metadata"] == {"notes": "updated plan"}
+
+    # Verify second plan (older)
+    older_plan = plans[1]
+    assert older_plan["name"] == "Older Plan"
+    assert older_plan["goal"] == "hypertrophy"
+    assert older_plan["difficulty_level"] == "beginner"
+    assert older_plan["is_public"] is True
+
+    # Verify database calls
+    assert mock_get_supabase_client_for_get.table.called
+    mock_get_supabase_client_for_get.table.assert_called_with("plans")
+    mock_get_supabase_client_for_get.table().select.assert_called_with(
+        "*", count="exact"
+    )
+    mock_get_supabase_client_for_get.table().select().order.assert_called_with(
+        "created_at", desc=True
+    )
+    mock_get_supabase_client_for_get.table().select().order().range.assert_called_with(
+        0, 19
+    )  # offset 0, limit 20
+
+
+def test_get_plans_success_empty_response(
+    mock_auth_dependency, mock_get_supabase_client_for_get
+):
+    """Test successful retrieval when user has no plans."""
+    # Configure mock response with empty data
+    mock_response = MagicMock()
+    mock_response.data = []
+    mock_response.count = 0
+    mock_get_supabase_client_for_get.table().select().order().range().execute.return_value = mock_response
+
+    # Make the request
+    response = client.get(
+        "/api/v1/plans/",
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    # Assert response
+    assert response.status_code == status.HTTP_200_OK
+    response_data = response.json()
+
+    # Verify empty response structure
+    assert response_data["plans"] == []
+    assert response_data["total_count"] == 0
+    assert response_data["page"] == 1
+    assert response_data["page_size"] == 20
+    assert response_data["has_next"] is False
+
+
+def test_get_plans_success_custom_pagination(
+    mock_auth_dependency, mock_get_supabase_client_for_get, mock_plans_list
+):
+    """Test successful retrieval with custom limit and offset parameters."""
+    # Configure mock response
+    mock_response = MagicMock()
+    mock_response.data = [mock_plans_list[0]]  # Return only first plan
+    mock_response.count = 5  # Total of 5 plans
+    mock_get_supabase_client_for_get.table().select().order().range().execute.return_value = mock_response
+
+    # Make the request with custom pagination
+    response = client.get(
+        "/api/v1/plans/?limit=1&offset=2",
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    # Assert response
+    assert response.status_code == status.HTTP_200_OK
+    response_data = response.json()
+
+    # Verify pagination metadata
+    assert response_data["total_count"] == 5
+    assert response_data["page"] == 3  # (offset 2 / limit 1) + 1
+    assert response_data["page_size"] == 1
+    assert response_data["has_next"] is True  # (2 + 1) < 5
+
+    # Verify only one plan returned
+    assert len(response_data["plans"]) == 1
+
+    # Verify database calls with correct pagination
+    mock_get_supabase_client_for_get.table().select().order().range.assert_called_with(
+        2, 2
+    )  # offset 2, offset + limit - 1
+
+
+def test_get_plans_success_maximum_limit(
+    mock_auth_dependency, mock_get_supabase_client_for_get
+):
+    """Test successful retrieval with maximum allowed limit."""
+    # Configure mock response
+    mock_response = MagicMock()
+    mock_response.data = []
+    mock_response.count = 0
+    mock_get_supabase_client_for_get.table().select().order().range().execute.return_value = mock_response
+
+    # Make the request with maximum limit
+    response = client.get(
+        "/api/v1/plans/?limit=100",
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    # Assert response
+    assert response.status_code == status.HTTP_200_OK
+    response_data = response.json()
+    assert response_data["page_size"] == 100
+
+    # Verify database calls with correct range
+    mock_get_supabase_client_for_get.table().select().order().range.assert_called_with(
+        0, 99
+    )  # offset 0, limit 100
+
+
+def test_get_plans_success_sorting_verification(
+    mock_auth_dependency, mock_get_supabase_client_for_get, mock_plans_list
+):
+    """Test that plans are returned sorted by created_at DESC (most recent first)."""
+    # Configure mock response with reversed order to verify sorting in request
+    mock_response = MagicMock()
+    mock_response.data = mock_plans_list  # Already ordered correctly in fixture
+    mock_response.count = 2
+    mock_get_supabase_client_for_get.table().select().order().range().execute.return_value = mock_response
+
+    # Make the request
+    response = client.get(
+        "/api/v1/plans/",
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    # Assert response
+    assert response.status_code == status.HTTP_200_OK
+    response_data = response.json()
+    plans = response_data["plans"]
+
+    # Verify sorting is requested correctly in database call
+    mock_get_supabase_client_for_get.table().select().order.assert_called_with(
+        "created_at", desc=True
+    )
+
+    # Verify response maintains expected order (Latest Plan first)
+    assert plans[0]["name"] == "Latest Plan"
+    assert plans[1]["name"] == "Older Plan"
+
+
+# ============================================================================
+# AUTHENTICATION TESTS - GET PLANS
+# ============================================================================
+
+
+def test_get_plans_unauthenticated():
+    """Test plans retrieval without authentication token."""
+    response = client.get("/api/v1/plans/")
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_get_plans_invalid_token():
+    """Test plans retrieval with invalid authentication token."""
+    response = client.get(
+        "/api/v1/plans/",
+        headers={"Authorization": "Bearer invalid-token"},
+    )
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+def test_get_plans_malformed_auth_header():
+    """Test plans retrieval with malformed authorization header."""
+    response = client.get(
+        "/api/v1/plans/",
+        headers={"Authorization": "InvalidFormat token"},
+    )
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+# ============================================================================
+# VALIDATION ERROR TESTS (422) - GET PLANS
+# ============================================================================
+
+
+def test_get_plans_invalid_limit_zero(
+    mock_auth_dependency, mock_get_supabase_client_for_get
+):
+    """Test plans retrieval with invalid limit (zero)."""
+    response = client.get(
+        "/api/v1/plans/?limit=0",
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    error_detail = response.json()["detail"]
+    assert any("limit" in str(error).lower() for error in error_detail)
+    assert any("greater than 0" in str(error).lower() for error in error_detail)
+
+
+def test_get_plans_invalid_limit_too_high(
+    mock_auth_dependency, mock_get_supabase_client_for_get
+):
+    """Test plans retrieval with limit exceeding maximum (101)."""
+    response = client.get(
+        "/api/v1/plans/?limit=101",
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    error_detail = response.json()["detail"]
+    assert any("limit" in str(error).lower() for error in error_detail)
+    assert any(
+        "less than or equal to 100" in str(error).lower() for error in error_detail
+    )
+
+
+def test_get_plans_invalid_offset_negative(
+    mock_auth_dependency, mock_get_supabase_client_for_get
+):
+    """Test plans retrieval with negative offset."""
+    response = client.get(
+        "/api/v1/plans/?offset=-1",
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    error_detail = response.json()["detail"]
+    assert any("offset" in str(error).lower() for error in error_detail)
+    assert any(
+        "greater than or equal to 0" in str(error).lower() for error in error_detail
+    )
+
+
+def test_get_plans_invalid_limit_string(
+    mock_auth_dependency, mock_get_supabase_client_for_get
+):
+    """Test plans retrieval with non-numeric limit."""
+    response = client.get(
+        "/api/v1/plans/?limit=abc",
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    error_detail = response.json()["detail"]
+    assert any("limit" in str(error).lower() for error in error_detail)
+
+
+def test_get_plans_invalid_offset_string(
+    mock_auth_dependency, mock_get_supabase_client_for_get
+):
+    """Test plans retrieval with non-numeric offset."""
+    response = client.get(
+        "/api/v1/plans/?offset=xyz",
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    error_detail = response.json()["detail"]
+    assert any("offset" in str(error).lower() for error in error_detail)
+
+
+# ============================================================================
+# DATABASE ERROR TESTS (500) - GET PLANS
+# ============================================================================
+
+
+def test_get_plans_database_connection_error(
+    mock_auth_dependency, mock_get_supabase_client_for_get
+):
+    """Test plans retrieval with database connection error."""
+    mock_get_supabase_client_for_get.table().select().order().range().execute.side_effect = Exception(
+        "Database connection timeout"
+    )
+
+    response = client.get(
+        "/api/v1/plans/",
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+    assert "internal error" in response.json()["detail"].lower()
+
+
+def test_get_plans_generic_database_error(
+    mock_auth_dependency, mock_get_supabase_client_for_get
+):
+    """Test plans retrieval with generic database error."""
+    mock_get_supabase_client_for_get.table().select().order().range().execute.side_effect = Exception(
+        "Unexpected database error occurred"
+    )
+
+    response = client.get(
+        "/api/v1/plans/",
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+    assert "internal error" in response.json()["detail"].lower()
+
+
+def test_get_plans_none_data_returned(
+    mock_auth_dependency, mock_get_supabase_client_for_get
+):
+    """Test plans retrieval when database returns None data."""
+    mock_response = MagicMock()
+    mock_response.data = None
+    mock_response.count = None
+    mock_get_supabase_client_for_get.table().select().order().range().execute.return_value = mock_response
+
+    response = client.get(
+        "/api/v1/plans/",
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    # Should handle None gracefully and return empty response
+    assert response.status_code == status.HTTP_200_OK
+    response_data = response.json()
+    assert response_data["plans"] == []
+    assert response_data["total_count"] == 0
+
+
+def test_get_plans_value_error_handling(
+    mock_auth_dependency, mock_get_supabase_client_for_get
+):
+    """Test plans retrieval with ValueError during data processing."""
+    # Mock a ValueError being raised during data processing
+    mock_get_supabase_client_for_get.table().select().order().range().execute.side_effect = ValueError(
+        "Invalid data format encountered"
+    )
+
+    response = client.get(
+        "/api/v1/plans/",
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    assert "Invalid data format encountered" in response.json()["detail"]
+
+
+# ============================================================================
+# BOUNDARY VALUE TESTS - GET PLANS
+# ============================================================================
+
+
+def test_get_plans_boundary_limit_one(
+    mock_auth_dependency, mock_get_supabase_client_for_get, mock_plans_list
+):
+    """Test plans retrieval with minimum limit (1)."""
+    mock_response = MagicMock()
+    mock_response.data = [mock_plans_list[0]]
+    mock_response.count = 5
+    mock_get_supabase_client_for_get.table().select().order().range().execute.return_value = mock_response
+
+    response = client.get(
+        "/api/v1/plans/?limit=1",
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    response_data = response.json()
+    assert response_data["page_size"] == 1
+    assert len(response_data["plans"]) == 1
+    assert response_data["has_next"] is True  # (0 + 1) < 5
+
+    # Verify database calls
+    mock_get_supabase_client_for_get.table().select().order().range.assert_called_with(
+        0, 0
+    )
+
+
+def test_get_plans_boundary_offset_zero(
+    mock_auth_dependency, mock_get_supabase_client_for_get, mock_plans_list
+):
+    """Test plans retrieval with minimum offset (0)."""
+    mock_response = MagicMock()
+    mock_response.data = mock_plans_list
+    mock_response.count = 2
+    mock_get_supabase_client_for_get.table().select().order().range().execute.return_value = mock_response
+
+    response = client.get(
+        "/api/v1/plans/?offset=0",
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    response_data = response.json()
+    assert response_data["page"] == 1  # (0 / 20) + 1
+
+    # Verify database calls
+    mock_get_supabase_client_for_get.table().select().order().range.assert_called_with(
+        0, 19
+    )
+
+
+def test_get_plans_boundary_large_offset(
+    mock_auth_dependency, mock_get_supabase_client_for_get
+):
+    """Test plans retrieval with large offset value."""
+    mock_response = MagicMock()
+    mock_response.data = []
+    mock_response.count = 5  # Total count less than offset
+    mock_get_supabase_client_for_get.table().select().order().range().execute.return_value = mock_response
+
+    response = client.get(
+        "/api/v1/plans/?offset=100",
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    response_data = response.json()
+    assert response_data["plans"] == []
+    assert response_data["total_count"] == 5
+    assert response_data["page"] == 6  # (100 / 20) + 1
+    assert response_data["has_next"] is False  # (100 + 20) >= 5
+
+    # Verify database calls
+    mock_get_supabase_client_for_get.table().select().order().range.assert_called_with(
+        100, 119
+    )
+
+
+def test_get_plans_pagination_edge_case_exact_page(
+    mock_auth_dependency, mock_get_supabase_client_for_get, mock_plans_list
+):
+    """Test pagination when total count exactly matches page boundary."""
+    mock_response = MagicMock()
+    mock_response.data = mock_plans_list  # 2 plans
+    mock_response.count = 40  # Exactly 2 pages with limit 20
+    mock_get_supabase_client_for_get.table().select().order().range().execute.return_value = mock_response
+
+    # Request second page
+    response = client.get(
+        "/api/v1/plans/?limit=20&offset=20",
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    response_data = response.json()
+    assert response_data["total_count"] == 40
+    assert response_data["page"] == 2  # (20 / 20) + 1
+    assert response_data["page_size"] == 20
+    assert response_data["has_next"] is False  # (20 + 20) == 40
+
+
+# ============================================================================
+# COMPLEX SCENARIOS - GET PLANS
+# ============================================================================
+
+
+def test_get_plans_with_complex_metadata(
+    mock_auth_dependency, mock_get_supabase_client_for_get, mock_user_id
+):
+    """Test plans retrieval with complex metadata structures."""
+    complex_plan = {
+        "id": str(uuid4()),
+        "user_id": mock_user_id,
+        "name": "Complex Metadata Plan",
+        "description": "Plan with complex metadata",
+        "training_style": None,
+        "goal": "strength",
+        "difficulty_level": "advanced",
+        "duration_weeks": 16,
+        "days_per_week": 5,
+        "is_public": False,
+        "metadata": {
+            "periodization": {
+                "type": "block",
+                "phases": [
+                    {"week": 1, "focus": "volume", "intensity": 70},
+                    {"week": 2, "focus": "intensity", "intensity": 85},
+                ],
+            },
+            "deload_weeks": [4, 8, 12],
+            "exercise_rotations": {
+                "squat_variation": ["back_squat", "front_squat", "safety_bar"],
+                "bench_variation": ["comp_bench", "close_grip", "incline"],
+            },
+        },
+        "version_number": 1,
+        "parent_plan_id": None,
+        "is_active": True,
+        "created_at": "2025-01-01T12:00:00+00:00",
+    }
+
+    mock_response = MagicMock()
+    mock_response.data = [complex_plan]
+    mock_response.count = 1
+    mock_get_supabase_client_for_get.table().select().order().range().execute.return_value = mock_response
+
+    response = client.get(
+        "/api/v1/plans/",
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    response_data = response.json()
+
+    plan = response_data["plans"][0]
+    assert plan["metadata"] == complex_plan["metadata"]
+    assert "periodization" in plan["metadata"]
+    assert "deload_weeks" in plan["metadata"]
+    assert plan["metadata"]["periodization"]["type"] == "block"
+    assert len(plan["metadata"]["periodization"]["phases"]) == 2
+
+
+def test_get_plans_unicode_content(
+    mock_auth_dependency, mock_get_supabase_client_for_get, mock_user_id
+):
+    """Test plans retrieval with unicode characters in plan names and descriptions."""
+    unicode_plan = {
+        "id": str(uuid4()),
+        "user_id": mock_user_id,
+        "name": "강화 운동 💪 Plan",
+        "description": "Descripción con acentos y símbolos: 体力 训练 🏋️‍♂️",
+        "training_style": None,
+        "goal": "fuerza y músculo",
+        "difficulty_level": "intermediate",
+        "duration_weeks": 8,
+        "days_per_week": 4,
+        "is_public": True,
+        "metadata": {"notes": "тренировка силы"},
+        "version_number": 1,
+        "parent_plan_id": None,
+        "is_active": True,
+        "created_at": "2025-01-01T12:00:00+00:00",
+    }
+
+    mock_response = MagicMock()
+    mock_response.data = [unicode_plan]
+    mock_response.count = 1
+    mock_get_supabase_client_for_get.table().select().order().range().execute.return_value = mock_response
+
+    response = client.get(
+        "/api/v1/plans/",
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    response_data = response.json()
+
+    plan = response_data["plans"][0]
+    assert plan["name"] == "강화 운동 💪 Plan"
+    assert plan["description"] == "Descripción con acentos y símbolos: 体力 训练 🏋️‍♂️"
+    assert plan["goal"] == "fuerza y músculo"
+    assert plan["metadata"]["notes"] == "тренировка силы"
