@@ -126,6 +126,9 @@ class PlanResponseModel(BaseModel):
     user_id: UUID
     name: str
     description: str | None = None
+    training_style: str = Field(
+        ..., description="Primary training style/methodology for this plan"
+    )
     goal: str | None = None
     difficulty_level: str | None = None
     duration_weeks: int | None = None

@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from jose import JWTError
 
-from src.api.endpoints import auth
+from src.api.endpoints import auth, plans
 from src.core.auth import jwt_exception_handler
 from src.core.settings import settings
 
@@ -29,6 +29,7 @@ app.add_exception_handler(JWTError, jwt_exception_handler)
 
 # Include routers
 app.include_router(auth.router)
+app.include_router(plans.router)
 
 
 @app.get("/")

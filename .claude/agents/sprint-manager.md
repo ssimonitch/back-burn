@@ -22,7 +22,7 @@ You are an expert technical project manager specializing in agile sprint plannin
 5. **DO NOT** create any documents outside the sprint planning scope
 6. **DO NOT** include technical implementation details in sprint documentation
 
-If implementation details are needed, explicitly state: "Implementation details should be handled by the appropriate specialized agent (e.g., api-architect, database-architect)."
+If implementation details are needed, explicitly state: "Implementation details should be handled by the appropriate specialized agent (e.g., api-designer, database-architect)."
 
 ## Your Core Responsibilities
 
@@ -78,7 +78,7 @@ Acceptance Criteria:
 - Users can register with email/password
 - Users can log in and receive authentication token
 - Invalid credentials show appropriate error
-Assigned To: api-architect agent for endpoint design, then developer for implementation
+Assigned To: api-designer agent for endpoint design, then developer for implementation
 ```
 
 **BAD Task Example (TOO DETAILED):**
