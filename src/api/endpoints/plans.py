@@ -6,9 +6,11 @@ and managing workout plans. Plans are versioned and immutable - updates
 create new versions rather than modifying existing plans.
 """
 
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from src.core.auth import JWTPayload, require_auth
+from src.core.auth import JWTPayload, optional_auth, require_auth
 from src.core.utils import get_supabase_client
 from src.models.plan import (
     PlanCreateModel,
@@ -314,4 +316,125 @@ async def get_plans(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve plans due to an internal error",
+        )
+
+
+@router.get(
+    "/{plan_id}",
+    response_model=PlanResponseModel,
+    status_code=status.HTTP_200_OK,
+    summary="Get a specific workout plan by ID",
+    responses={
+        200: {
+            "description": "Plan retrieved successfully",
+            "model": PlanResponseModel,
+        },
+        404: {
+            "description": "Plan not found or access denied",
+            "content": {"application/json": {"example": {"detail": "Plan not found"}}},
+        },
+        422: {
+            "description": "Invalid plan ID format",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": [
+                            {
+                                "loc": ["path", "plan_id"],
+                                "msg": "value is not a valid uuid",
+                                "type": "type_error.uuid",
+                            }
+                        ]
+                    }
+                }
+            },
+        },
+        500: {
+            "description": "Internal server error",
+            "content": {
+                "application/json": {"example": {"detail": "Failed to retrieve plan"}}
+            },
+        },
+    },
+)
+async def get_plan_by_id(
+    plan_id: UUID,
+    jwt_payload: JWTPayload | None = Depends(optional_auth),
+    supabase: Client = Depends(get_supabase_client),
+) -> PlanResponseModel:
+    """
+    Retrieve a specific workout plan by its ID.
+
+    Returns the detailed plan data for the specified plan_id. Access is controlled
+    by RLS policies - users can only access their own plans unless the plan is public.
+    Public plans (is_public=true) can be viewed by anyone, including unauthenticated users.
+
+    Args:
+        plan_id: The UUID of the plan to retrieve
+        jwt_payload: Optional JWT payload - required for private plans, optional for public
+        supabase: The Supabase client instance
+
+    Returns:
+        PlanResponseModel containing the plan details
+
+    Raises:
+        HTTPException:
+            - 404 if plan doesn't exist or user lacks permission
+            - 500 if retrieval fails due to database errors
+    """
+    try:
+        # Build the query for retrieving the plan
+        query = supabase.table("plans").select("*").eq("id", plan_id)
+
+        # Execute the query without .single() first to handle no results gracefully
+        response = query.execute()
+
+        # Check if we got any data back
+        if not response.data or len(response.data) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Plan not found",
+            )
+
+        # Get the first (and should be only) plan
+        plan = response.data[0]
+
+        # For unauthenticated users, verify the plan is public
+        if not jwt_payload and not plan.get("is_public", False):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Plan not found",
+            )
+
+        # For authenticated users, verify they own the plan or it's public
+        if jwt_payload:
+            is_owner = str(plan.get("user_id")) == str(jwt_payload.user_id)
+            is_public = plan.get("is_public", False)
+
+            if not is_owner and not is_public:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Plan not found",
+                )
+
+        # Return the plan data
+        return PlanResponseModel(**plan)
+
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except ValueError as ve:
+        # Handle validation errors (e.g., invalid UUID format)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(ve),
+        )
+    except Exception:
+        # Handle unexpected errors
+        # Log the error in production
+        # logger.error(f"Failed to retrieve plan {plan_id}: {str(e)}")
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve plan due to an internal error",
         )
