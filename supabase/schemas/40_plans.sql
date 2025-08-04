@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS public.plans (
     parent_plan_id UUID REFERENCES public.plans(id),
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMPTZ DEFAULT NOW(),
+    deleted_at TIMESTAMPTZ DEFAULT NULL,
     -- Ensure unique versioning per user and plan name
     UNIQUE(user_id, name, version_number)
 );
@@ -32,6 +33,7 @@ CREATE INDEX IF NOT EXISTS idx_plans_user_id ON public.plans(user_id);
 CREATE INDEX IF NOT EXISTS idx_plans_is_public ON public.plans(is_public) WHERE is_public = true;
 CREATE INDEX IF NOT EXISTS idx_plans_parent ON public.plans(parent_plan_id);
 CREATE INDEX IF NOT EXISTS idx_plans_training_style ON public.plans(training_style);
+CREATE INDEX IF NOT EXISTS idx_plans_deleted_at ON public.plans(deleted_at) WHERE deleted_at IS NULL;
 
 -- Enable RLS (policies defined in migrations)
 ALTER TABLE public.plans ENABLE ROW LEVEL SECURITY;
@@ -50,3 +52,4 @@ COMMENT ON COLUMN public.plans.metadata IS 'Additional plan configuration like p
 COMMENT ON COLUMN public.plans.version_number IS 'Version number for this plan iteration (increments with each modification)';
 COMMENT ON COLUMN public.plans.parent_plan_id IS 'References the original plan this version derives from (NULL for v1)';
 COMMENT ON COLUMN public.plans.is_active IS 'Whether this is the current active version of the plan (only one version per plan name should be active)';
+COMMENT ON COLUMN public.plans.deleted_at IS 'Timestamp when plan was soft-deleted. NULL means plan is active/not deleted.';

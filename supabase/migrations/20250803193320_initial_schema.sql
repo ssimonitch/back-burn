@@ -1,712 +1,157 @@
-create extension if not exists "vector" with schema "extensions";
+-- =============================================================================
+-- EXTENSIONS SETUP
+-- =============================================================================
+-- PostgreSQL extensions required for the Slow Burn application
+-- This must be loaded first as other schemas depend on these extensions
+-- =============================================================================
 
+-- Create a dedicated schema for extensions to avoid polluting the public schema
+CREATE SCHEMA IF NOT EXISTS extensions;
 
-create table "public"."conversations" (
-    "id" uuid not null default uuid_generate_v4(),
-    "user_id" uuid not null,
-    "started_at" timestamp with time zone not null default now(),
-    "ended_at" timestamp with time zone,
-    "context" jsonb default '{}'::jsonb,
-    "created_at" timestamp with time zone default now(),
-    "updated_at" timestamp with time zone default now()
+-- Grant usage on extensions schema to authenticated users
+-- This allows users to use the vector types and functions
+GRANT USAGE ON SCHEMA extensions TO authenticated;
+GRANT USAGE ON SCHEMA extensions TO service_role;
+
+-- Enable UUID extension in public schema (standard practice for uuid-ossp)
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA public;
+
+-- Enable vector extension in dedicated extensions schema for security
+-- This prevents namespace pollution and provides better security boundaries
+CREATE EXTENSION IF NOT EXISTS "vector" WITH SCHEMA extensions;
+
+-- Comment on the extensions schema
+COMMENT ON SCHEMA extensions IS 'Dedicated schema for PostgreSQL extensions to maintain security isolation';-- =============================================================================
+-- MOVEMENT PATTERNS TABLE
+-- =============================================================================
+-- Reference table for fundamental movement patterns used in exercise classification
+-- Examples: squat, hinge, push, pull, carry, gait
+-- =============================================================================
+
+-- Movement patterns lookup table
+CREATE TABLE IF NOT EXISTS public.movement_patterns (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name TEXT UNIQUE NOT NULL,
+    description TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Enable RLS (policies defined in migrations)
+ALTER TABLE public.movement_patterns ENABLE ROW LEVEL SECURITY;
 
-alter table "public"."conversations" enable row level security;
+-- Comments
+COMMENT ON TABLE public.movement_patterns IS 'Reference table for fundamental movement patterns (e.g., squat, hinge, push, pull, carry, gait)';
+COMMENT ON COLUMN public.movement_patterns.name IS 'Unique identifier for the movement pattern (e.g., "squat", "hip_hinge")';
+COMMENT ON COLUMN public.movement_patterns.description IS 'Detailed explanation of the movement pattern and its characteristics';-- =============================================================================
+-- MUSCLE GROUPS TABLE
+-- =============================================================================
+-- Reference table for muscle groups used in exercise classification and targeting
+-- Includes anatomical regions for workout organization
+-- =============================================================================
 
-create table "public"."equipment_types" (
-    "id" uuid not null default uuid_generate_v4(),
-    "name" text not null,
-    "category" text,
-    "description" text,
-    "created_at" timestamp with time zone default now()
+-- Muscle groups lookup table  
+CREATE TABLE IF NOT EXISTS public.muscle_groups (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name TEXT UNIQUE NOT NULL,
+    muscle_region TEXT NOT NULL CHECK (muscle_region IN ('upper', 'lower', 'core', 'full_body', 'posterior_chain')),
+    description TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Enable RLS (policies defined in migrations)
+ALTER TABLE public.muscle_groups ENABLE ROW LEVEL SECURITY;
 
-alter table "public"."equipment_types" enable row level security;
+-- Comments
+COMMENT ON TABLE public.muscle_groups IS 'Reference table for muscle groups used in exercise classification and targeting';
+COMMENT ON COLUMN public.muscle_groups.name IS 'Name of the muscle group (e.g., "quadriceps", "latissimus_dorsi")';
+COMMENT ON COLUMN public.muscle_groups.muscle_region IS 'Broad anatomical region classification for workout organization';
+COMMENT ON COLUMN public.muscle_groups.description IS 'Anatomical description and function of the muscle group';-- =============================================================================
+-- EQUIPMENT TYPES TABLE
+-- =============================================================================
+-- Reference table for gym equipment and tools used in exercises
+-- Categorized for filtering and organization
+-- =============================================================================
 
-create table "public"."exercise_movement_patterns" (
-    "id" uuid not null default uuid_generate_v4(),
-    "exercise_id" uuid not null,
-    "movement_pattern_id" uuid not null,
-    "is_primary" boolean default true,
-    "created_at" timestamp with time zone default now()
+-- Equipment types lookup table
+CREATE TABLE IF NOT EXISTS public.equipment_types (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name TEXT UNIQUE NOT NULL,
+    category TEXT CHECK (category IN ('free_weight', 'machine', 'bodyweight', 'cable', 'other')),
+    description TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Enable RLS (policies defined in migrations)
+ALTER TABLE public.equipment_types ENABLE ROW LEVEL SECURITY;
 
-alter table "public"."exercise_movement_patterns" enable row level security;
+-- Comments
+COMMENT ON TABLE public.equipment_types IS 'Reference table for gym equipment and tools used in exercises';
+COMMENT ON COLUMN public.equipment_types.name IS 'Specific equipment name (e.g., "barbell", "dumbbell", "lat_pulldown_machine")';
+COMMENT ON COLUMN public.equipment_types.category IS 'High-level equipment classification for filtering and organization';
+COMMENT ON COLUMN public.equipment_types.description IS 'Details about the equipment, usage notes, and variations';-- =============================================================================
+-- TRAINING STYLES TABLE
+-- =============================================================================
+-- Reference table for different training methodologies and their characteristics
+-- Used for exercise classification and programming recommendations
+-- =============================================================================
 
-create table "public"."exercise_muscles" (
-    "id" uuid not null default uuid_generate_v4(),
-    "exercise_id" uuid not null,
-    "muscle_group_id" uuid not null,
-    "muscle_role" text not null,
-    "activation_level" integer,
-    "created_at" timestamp with time zone default now()
+-- Training styles reference table for exercise classification
+CREATE TABLE IF NOT EXISTS public.training_styles (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name TEXT UNIQUE NOT NULL,
+    description TEXT,
+    typical_rep_range TEXT, -- e.g., "1-6", "6-12", "8-15"
+    typical_set_range TEXT, -- e.g., "3-5", "3-6", "2-4"
+    rest_periods TEXT, -- e.g., "3-5 minutes", "90-180 seconds"
+    focus_description TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Enable RLS (policies defined in migrations)
+ALTER TABLE public.training_styles ENABLE ROW LEVEL SECURITY;
 
-alter table "public"."exercise_muscles" enable row level security;
+-- Comments
+COMMENT ON TABLE public.training_styles IS 'Reference table for different training methodologies and their characteristics';
+COMMENT ON COLUMN public.training_styles.name IS 'Training style identifier (e.g., "powerlifting", "bodybuilding", "powerbuilding")';
+COMMENT ON COLUMN public.training_styles.typical_rep_range IS 'Common rep ranges used in this training style';
+COMMENT ON COLUMN public.training_styles.typical_set_range IS 'Common set ranges used in this training style';
+COMMENT ON COLUMN public.training_styles.rest_periods IS 'Typical rest periods between sets for this training style';
+COMMENT ON COLUMN public.training_styles.focus_description IS 'Primary focus and goals of this training methodology';-- =============================================================================
+-- PROFILES TABLE
+-- =============================================================================
+-- User profiles extending Supabase auth with fitness-specific data
+-- Tracks user preferences, goals, and AI companion affinity score
+-- =============================================================================
 
-create table "public"."exercise_relationships" (
-    "id" uuid not null default uuid_generate_v4(),
-    "parent_exercise_id" uuid not null,
-    "related_exercise_id" uuid not null,
-    "relationship_type" text not null,
-    "notes" text,
-    "created_at" timestamp with time zone default now()
+-- Profiles table (extends Supabase auth.users)
+CREATE TABLE IF NOT EXISTS public.profiles (
+    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    username TEXT UNIQUE NOT NULL,
+    full_name TEXT,
+    age INTEGER CHECK (age >= 13 AND age <= 120),
+    fitness_level TEXT CHECK (fitness_level IN ('beginner', 'intermediate', 'advanced')),
+    goals TEXT[],
+    preferences JSONB DEFAULT '{}',
+    affinity_score INTEGER DEFAULT 0 CHECK (affinity_score >= 0),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-
-alter table "public"."exercise_relationships" enable row level security;
-
-create table "public"."exercise_training_styles" (
-    "id" uuid not null default uuid_generate_v4(),
-    "exercise_id" uuid not null,
-    "training_style_id" uuid not null,
-    "suitability_score" integer not null,
-    "optimal_rep_min" integer,
-    "optimal_rep_max" integer,
-    "notes" text,
-    "created_at" timestamp with time zone default now()
-);
-
-
-alter table "public"."exercise_training_styles" enable row level security;
-
-create table "public"."exercises" (
-    "id" uuid not null default uuid_generate_v4(),
-    "name" text not null,
-    "description" text,
-    "instructions" text[],
-    "tips" text[],
-    "primary_equipment_id" uuid,
-    "secondary_equipment_id" uuid,
-    "force_vector" text,
-    "exercise_category" text,
-    "mechanic_type" text,
-    "body_region" text,
-    "difficulty_level" text,
-    "laterality" text,
-    "load_type" text,
-    "metadata" jsonb default '{}'::jsonb,
-    "created_at" timestamp with time zone default now(),
-    "updated_at" timestamp with time zone default now()
-);
-
-
-alter table "public"."exercises" enable row level security;
-
-create table "public"."memories" (
-    "id" uuid not null default uuid_generate_v4(),
-    "user_id" uuid not null,
-    "conversation_id" uuid,
-    "content" text not null,
-    "embedding" halfvec(3072),
-    "memory_type" text,
-    "importance_score" numeric(3,2),
-    "metadata" jsonb default '{}'::jsonb,
-    "created_at" timestamp with time zone default now(),
-    "updated_at" timestamp with time zone default now()
-);
-
-
-alter table "public"."memories" enable row level security;
-
-create table "public"."movement_patterns" (
-    "id" uuid not null default uuid_generate_v4(),
-    "name" text not null,
-    "description" text,
-    "created_at" timestamp with time zone default now()
-);
-
-
-alter table "public"."movement_patterns" enable row level security;
-
-create table "public"."muscle_groups" (
-    "id" uuid not null default uuid_generate_v4(),
-    "name" text not null,
-    "muscle_region" text not null,
-    "description" text,
-    "created_at" timestamp with time zone default now()
-);
-
-
-alter table "public"."muscle_groups" enable row level security;
-
-create table "public"."plan_exercises" (
-    "id" uuid not null default uuid_generate_v4(),
-    "plan_id" uuid not null,
-    "exercise_id" uuid not null,
-    "day_of_week" integer not null,
-    "order_in_day" integer not null,
-    "sets" integer not null,
-    "target_reps" integer[] not null,
-    "rest_seconds" integer,
-    "notes" text,
-    "created_at" timestamp with time zone default now()
-);
-
-
-alter table "public"."plan_exercises" enable row level security;
-
-create table "public"."plans" (
-    "id" uuid not null default uuid_generate_v4(),
-    "user_id" uuid not null,
-    "name" text not null,
-    "description" text,
-    "goal" text,
-    "difficulty_level" text,
-    "duration_weeks" integer,
-    "days_per_week" integer,
-    "is_public" boolean default false,
-    "metadata" jsonb default '{}'::jsonb,
-    "version_number" integer not null default 1,
-    "parent_plan_id" uuid,
-    "is_active" boolean default true,
-    "created_at" timestamp with time zone default now()
-);
-
-
-alter table "public"."plans" enable row level security;
-
-create table "public"."profiles" (
-    "id" uuid not null,
-    "username" text not null,
-    "full_name" text,
-    "age" integer,
-    "fitness_level" text,
-    "goals" text[],
-    "preferences" jsonb default '{}'::jsonb,
-    "affinity_score" integer default 0,
-    "created_at" timestamp with time zone default now(),
-    "updated_at" timestamp with time zone default now()
-);
-
-
-alter table "public"."profiles" enable row level security;
-
-create table "public"."sets" (
-    "id" uuid not null default uuid_generate_v4(),
-    "workout_session_id" uuid not null,
-    "exercise_id" uuid not null,
-    "set_number" integer not null,
-    "weight" numeric(10,2),
-    "reps" integer not null,
-    "rest_taken_seconds" integer,
-    "rpe" integer,
-    "volume_load" numeric(12,2) generated always as ((weight * (reps)::numeric)) stored,
-    "tempo" text,
-    "range_of_motion_quality" text,
-    "form_quality" integer,
-    "estimated_1rm" numeric(10,2),
-    "intensity_percentage" numeric(5,2),
-    "set_type" text,
-    "reps_in_reserve" integer,
-    "reached_failure" boolean default false,
-    "failure_type" text,
-    "equipment_variation" text,
-    "assistance_type" text,
-    "notes" text,
-    "technique_cues" text[],
-    "created_at" timestamp with time zone default now(),
-    "updated_at" timestamp with time zone default now()
-);
-
-
-alter table "public"."sets" enable row level security;
-
-create table "public"."training_styles" (
-    "id" uuid not null default uuid_generate_v4(),
-    "name" text not null,
-    "description" text,
-    "typical_rep_range" text,
-    "typical_set_range" text,
-    "rest_periods" text,
-    "focus_description" text,
-    "created_at" timestamp with time zone default now()
-);
-
-
-alter table "public"."training_styles" enable row level security;
-
-create table "public"."workout_sessions" (
-    "id" uuid not null default uuid_generate_v4(),
-    "user_id" uuid not null,
-    "plan_id" uuid,
-    "started_at" timestamp with time zone not null default now(),
-    "completed_at" timestamp with time zone,
-    "notes" text,
-    "mood" text,
-    "overall_rpe" integer,
-    "pre_workout_energy" integer,
-    "post_workout_energy" integer,
-    "workout_type" text,
-    "training_phase" text,
-    "total_volume" numeric(12,2),
-    "total_sets" integer,
-    "metadata" jsonb default '{}'::jsonb,
-    "created_at" timestamp with time zone default now(),
-    "updated_at" timestamp with time zone default now()
-);
-
-
-alter table "public"."workout_sessions" enable row level security;
-
-CREATE UNIQUE INDEX conversations_pkey ON public.conversations USING btree (id);
-
-CREATE UNIQUE INDEX equipment_types_name_key ON public.equipment_types USING btree (name);
-
-CREATE UNIQUE INDEX equipment_types_pkey ON public.equipment_types USING btree (id);
-
-CREATE UNIQUE INDEX exercise_movement_patterns_exercise_id_movement_pattern_id_key ON public.exercise_movement_patterns USING btree (exercise_id, movement_pattern_id);
-
-CREATE UNIQUE INDEX exercise_movement_patterns_pkey ON public.exercise_movement_patterns USING btree (id);
-
-CREATE UNIQUE INDEX exercise_muscles_exercise_id_muscle_group_id_key ON public.exercise_muscles USING btree (exercise_id, muscle_group_id);
-
-CREATE UNIQUE INDEX exercise_muscles_pkey ON public.exercise_muscles USING btree (id);
-
-CREATE UNIQUE INDEX exercise_relationships_parent_exercise_id_related_exercise__key ON public.exercise_relationships USING btree (parent_exercise_id, related_exercise_id, relationship_type);
-
-CREATE UNIQUE INDEX exercise_relationships_pkey ON public.exercise_relationships USING btree (id);
-
-CREATE UNIQUE INDEX exercise_training_styles_exercise_id_training_style_id_key ON public.exercise_training_styles USING btree (exercise_id, training_style_id);
-
-CREATE UNIQUE INDEX exercise_training_styles_pkey ON public.exercise_training_styles USING btree (id);
-
-CREATE UNIQUE INDEX exercises_name_primary_equipment_id_key ON public.exercises USING btree (name, primary_equipment_id);
-
-CREATE UNIQUE INDEX exercises_pkey ON public.exercises USING btree (id);
-
-CREATE INDEX idx_conversations_started_at ON public.conversations USING btree (started_at DESC);
-
-CREATE INDEX idx_conversations_user_id ON public.conversations USING btree (user_id);
-
-CREATE INDEX idx_exercise_movement_patterns_exercise ON public.exercise_movement_patterns USING btree (exercise_id);
-
-CREATE INDEX idx_exercise_movement_patterns_pattern ON public.exercise_movement_patterns USING btree (movement_pattern_id);
-
-CREATE INDEX idx_exercise_muscles_exercise ON public.exercise_muscles USING btree (exercise_id);
-
-CREATE INDEX idx_exercise_muscles_muscle ON public.exercise_muscles USING btree (muscle_group_id);
-
-CREATE INDEX idx_exercise_muscles_role ON public.exercise_muscles USING btree (muscle_role);
-
-CREATE INDEX idx_exercise_relationships_parent ON public.exercise_relationships USING btree (parent_exercise_id);
-
-CREATE INDEX idx_exercise_relationships_related ON public.exercise_relationships USING btree (related_exercise_id);
-
-CREATE INDEX idx_exercise_relationships_type ON public.exercise_relationships USING btree (relationship_type);
-
-CREATE INDEX idx_exercise_training_styles_exercise ON public.exercise_training_styles USING btree (exercise_id);
-
-CREATE INDEX idx_exercise_training_styles_style ON public.exercise_training_styles USING btree (training_style_id);
-
-CREATE INDEX idx_exercises_body_region ON public.exercises USING btree (body_region);
-
-CREATE INDEX idx_exercises_category ON public.exercises USING btree (exercise_category);
-
-CREATE INDEX idx_exercises_primary_equipment ON public.exercises USING btree (primary_equipment_id);
-
-CREATE INDEX idx_memories_conversation_id ON public.memories USING btree (conversation_id);
-
-CREATE INDEX idx_memories_embedding ON public.memories USING hnsw (embedding halfvec_l2_ops);
-
-CREATE INDEX idx_memories_memory_type ON public.memories USING btree (memory_type);
-
-CREATE INDEX idx_memories_user_id ON public.memories USING btree (user_id);
-
-CREATE INDEX idx_plan_exercises_day ON public.plan_exercises USING btree (day_of_week);
-
-CREATE INDEX idx_plan_exercises_exercise_id ON public.plan_exercises USING btree (exercise_id);
-
-CREATE INDEX idx_plan_exercises_plan_id ON public.plan_exercises USING btree (plan_id);
-
-CREATE INDEX idx_plans_is_public ON public.plans USING btree (is_public) WHERE (is_public = true);
-
-CREATE INDEX idx_plans_parent ON public.plans USING btree (parent_plan_id);
-
-CREATE INDEX idx_plans_user_id ON public.plans USING btree (user_id);
-
-CREATE INDEX idx_sets_exercise_id ON public.sets USING btree (exercise_id);
-
-CREATE INDEX idx_sets_set_type ON public.sets USING btree (set_type);
-
-CREATE INDEX idx_sets_workout_session_id ON public.sets USING btree (workout_session_id);
-
-CREATE INDEX idx_workout_sessions_plan_id ON public.workout_sessions USING btree (plan_id);
-
-CREATE INDEX idx_workout_sessions_started_at ON public.workout_sessions USING btree (started_at DESC);
-
-CREATE INDEX idx_workout_sessions_user_id ON public.workout_sessions USING btree (user_id);
-
-CREATE UNIQUE INDEX memories_pkey ON public.memories USING btree (id);
-
-CREATE UNIQUE INDEX movement_patterns_name_key ON public.movement_patterns USING btree (name);
-
-CREATE UNIQUE INDEX movement_patterns_pkey ON public.movement_patterns USING btree (id);
-
-CREATE UNIQUE INDEX muscle_groups_name_key ON public.muscle_groups USING btree (name);
-
-CREATE UNIQUE INDEX muscle_groups_pkey ON public.muscle_groups USING btree (id);
-
-CREATE UNIQUE INDEX plan_exercises_pkey ON public.plan_exercises USING btree (id);
-
-CREATE UNIQUE INDEX plan_exercises_plan_id_day_of_week_order_in_day_key ON public.plan_exercises USING btree (plan_id, day_of_week, order_in_day);
-
-CREATE UNIQUE INDEX plans_pkey ON public.plans USING btree (id);
-
-CREATE UNIQUE INDEX plans_user_id_name_version_number_key ON public.plans USING btree (user_id, name, version_number);
-
-CREATE UNIQUE INDEX profiles_pkey ON public.profiles USING btree (id);
-
-CREATE UNIQUE INDEX profiles_username_key ON public.profiles USING btree (username);
-
-CREATE UNIQUE INDEX sets_pkey ON public.sets USING btree (id);
-
-CREATE UNIQUE INDEX training_styles_name_key ON public.training_styles USING btree (name);
-
-CREATE UNIQUE INDEX training_styles_pkey ON public.training_styles USING btree (id);
-
-CREATE UNIQUE INDEX workout_sessions_pkey ON public.workout_sessions USING btree (id);
-
-alter table "public"."conversations" add constraint "conversations_pkey" PRIMARY KEY using index "conversations_pkey";
-
-alter table "public"."equipment_types" add constraint "equipment_types_pkey" PRIMARY KEY using index "equipment_types_pkey";
-
-alter table "public"."exercise_movement_patterns" add constraint "exercise_movement_patterns_pkey" PRIMARY KEY using index "exercise_movement_patterns_pkey";
-
-alter table "public"."exercise_muscles" add constraint "exercise_muscles_pkey" PRIMARY KEY using index "exercise_muscles_pkey";
-
-alter table "public"."exercise_relationships" add constraint "exercise_relationships_pkey" PRIMARY KEY using index "exercise_relationships_pkey";
-
-alter table "public"."exercise_training_styles" add constraint "exercise_training_styles_pkey" PRIMARY KEY using index "exercise_training_styles_pkey";
-
-alter table "public"."exercises" add constraint "exercises_pkey" PRIMARY KEY using index "exercises_pkey";
-
-alter table "public"."memories" add constraint "memories_pkey" PRIMARY KEY using index "memories_pkey";
-
-alter table "public"."movement_patterns" add constraint "movement_patterns_pkey" PRIMARY KEY using index "movement_patterns_pkey";
-
-alter table "public"."muscle_groups" add constraint "muscle_groups_pkey" PRIMARY KEY using index "muscle_groups_pkey";
-
-alter table "public"."plan_exercises" add constraint "plan_exercises_pkey" PRIMARY KEY using index "plan_exercises_pkey";
-
-alter table "public"."plans" add constraint "plans_pkey" PRIMARY KEY using index "plans_pkey";
-
-alter table "public"."profiles" add constraint "profiles_pkey" PRIMARY KEY using index "profiles_pkey";
-
-alter table "public"."sets" add constraint "sets_pkey" PRIMARY KEY using index "sets_pkey";
-
-alter table "public"."training_styles" add constraint "training_styles_pkey" PRIMARY KEY using index "training_styles_pkey";
-
-alter table "public"."workout_sessions" add constraint "workout_sessions_pkey" PRIMARY KEY using index "workout_sessions_pkey";
-
-alter table "public"."conversations" add constraint "conversations_user_id_fkey" FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE not valid;
-
-alter table "public"."conversations" validate constraint "conversations_user_id_fkey";
-
-alter table "public"."equipment_types" add constraint "equipment_types_category_check" CHECK ((category = ANY (ARRAY['free_weight'::text, 'machine'::text, 'bodyweight'::text, 'cable'::text, 'other'::text]))) not valid;
-
-alter table "public"."equipment_types" validate constraint "equipment_types_category_check";
-
-alter table "public"."equipment_types" add constraint "equipment_types_name_key" UNIQUE using index "equipment_types_name_key";
-
-alter table "public"."exercise_movement_patterns" add constraint "exercise_movement_patterns_exercise_id_fkey" FOREIGN KEY (exercise_id) REFERENCES exercises(id) ON DELETE CASCADE not valid;
-
-alter table "public"."exercise_movement_patterns" validate constraint "exercise_movement_patterns_exercise_id_fkey";
-
-alter table "public"."exercise_movement_patterns" add constraint "exercise_movement_patterns_exercise_id_movement_pattern_id_key" UNIQUE using index "exercise_movement_patterns_exercise_id_movement_pattern_id_key";
-
-alter table "public"."exercise_movement_patterns" add constraint "exercise_movement_patterns_movement_pattern_id_fkey" FOREIGN KEY (movement_pattern_id) REFERENCES movement_patterns(id) ON DELETE CASCADE not valid;
-
-alter table "public"."exercise_movement_patterns" validate constraint "exercise_movement_patterns_movement_pattern_id_fkey";
-
-alter table "public"."exercise_muscles" add constraint "exercise_muscles_activation_level_check" CHECK (((activation_level >= 1) AND (activation_level <= 5))) not valid;
-
-alter table "public"."exercise_muscles" validate constraint "exercise_muscles_activation_level_check";
-
-alter table "public"."exercise_muscles" add constraint "exercise_muscles_exercise_id_fkey" FOREIGN KEY (exercise_id) REFERENCES exercises(id) ON DELETE CASCADE not valid;
-
-alter table "public"."exercise_muscles" validate constraint "exercise_muscles_exercise_id_fkey";
-
-alter table "public"."exercise_muscles" add constraint "exercise_muscles_exercise_id_muscle_group_id_key" UNIQUE using index "exercise_muscles_exercise_id_muscle_group_id_key";
-
-alter table "public"."exercise_muscles" add constraint "exercise_muscles_muscle_group_id_fkey" FOREIGN KEY (muscle_group_id) REFERENCES muscle_groups(id) ON DELETE CASCADE not valid;
-
-alter table "public"."exercise_muscles" validate constraint "exercise_muscles_muscle_group_id_fkey";
-
-alter table "public"."exercise_muscles" add constraint "exercise_muscles_muscle_role_check" CHECK ((muscle_role = ANY (ARRAY['primary'::text, 'secondary'::text, 'stabilizer'::text]))) not valid;
-
-alter table "public"."exercise_muscles" validate constraint "exercise_muscles_muscle_role_check";
-
-alter table "public"."exercise_relationships" add constraint "exercise_relationships_check" CHECK ((parent_exercise_id <> related_exercise_id)) not valid;
-
-alter table "public"."exercise_relationships" validate constraint "exercise_relationships_check";
-
-alter table "public"."exercise_relationships" add constraint "exercise_relationships_parent_exercise_id_fkey" FOREIGN KEY (parent_exercise_id) REFERENCES exercises(id) ON DELETE CASCADE not valid;
-
-alter table "public"."exercise_relationships" validate constraint "exercise_relationships_parent_exercise_id_fkey";
-
-alter table "public"."exercise_relationships" add constraint "exercise_relationships_parent_exercise_id_related_exercise__key" UNIQUE using index "exercise_relationships_parent_exercise_id_related_exercise__key";
-
-alter table "public"."exercise_relationships" add constraint "exercise_relationships_related_exercise_id_fkey" FOREIGN KEY (related_exercise_id) REFERENCES exercises(id) ON DELETE CASCADE not valid;
-
-alter table "public"."exercise_relationships" validate constraint "exercise_relationships_related_exercise_id_fkey";
-
-alter table "public"."exercise_relationships" add constraint "exercise_relationships_relationship_type_check" CHECK ((relationship_type = ANY (ARRAY['variation'::text, 'progression'::text, 'regression'::text, 'alternative'::text, 'antagonist'::text, 'superset'::text]))) not valid;
-
-alter table "public"."exercise_relationships" validate constraint "exercise_relationships_relationship_type_check";
-
-alter table "public"."exercise_training_styles" add constraint "exercise_training_styles_check" CHECK (((optimal_rep_max > 0) AND (optimal_rep_max >= optimal_rep_min))) not valid;
-
-alter table "public"."exercise_training_styles" validate constraint "exercise_training_styles_check";
-
-alter table "public"."exercise_training_styles" add constraint "exercise_training_styles_exercise_id_fkey" FOREIGN KEY (exercise_id) REFERENCES exercises(id) ON DELETE CASCADE not valid;
-
-alter table "public"."exercise_training_styles" validate constraint "exercise_training_styles_exercise_id_fkey";
-
-alter table "public"."exercise_training_styles" add constraint "exercise_training_styles_exercise_id_training_style_id_key" UNIQUE using index "exercise_training_styles_exercise_id_training_style_id_key";
-
-alter table "public"."exercise_training_styles" add constraint "exercise_training_styles_optimal_rep_min_check" CHECK ((optimal_rep_min > 0)) not valid;
-
-alter table "public"."exercise_training_styles" validate constraint "exercise_training_styles_optimal_rep_min_check";
-
-alter table "public"."exercise_training_styles" add constraint "exercise_training_styles_suitability_score_check" CHECK (((suitability_score >= 1) AND (suitability_score <= 5))) not valid;
-
-alter table "public"."exercise_training_styles" validate constraint "exercise_training_styles_suitability_score_check";
-
-alter table "public"."exercise_training_styles" add constraint "exercise_training_styles_training_style_id_fkey" FOREIGN KEY (training_style_id) REFERENCES training_styles(id) ON DELETE CASCADE not valid;
-
-alter table "public"."exercise_training_styles" validate constraint "exercise_training_styles_training_style_id_fkey";
-
-alter table "public"."exercises" add constraint "exercises_body_region_check" CHECK ((body_region = ANY (ARRAY['upper'::text, 'lower'::text, 'full_body'::text, 'core'::text]))) not valid;
-
-alter table "public"."exercises" validate constraint "exercises_body_region_check";
-
-alter table "public"."exercises" add constraint "exercises_difficulty_level_check" CHECK ((difficulty_level = ANY (ARRAY['beginner'::text, 'intermediate'::text, 'advanced'::text, 'expert'::text]))) not valid;
-
-alter table "public"."exercises" validate constraint "exercises_difficulty_level_check";
-
-alter table "public"."exercises" add constraint "exercises_exercise_category_check" CHECK ((exercise_category = ANY (ARRAY['strength'::text, 'cardio'::text, 'mobility'::text, 'plyometric'::text, 'sport_specific'::text, 'corrective'::text, 'balance'::text, 'hypertrophy'::text]))) not valid;
-
-alter table "public"."exercises" validate constraint "exercises_exercise_category_check";
-
-alter table "public"."exercises" add constraint "exercises_force_vector_check" CHECK ((force_vector = ANY (ARRAY['vertical'::text, 'horizontal'::text, 'lateral'::text, 'rotational'::text, 'multi_planar'::text]))) not valid;
-
-alter table "public"."exercises" validate constraint "exercises_force_vector_check";
-
-alter table "public"."exercises" add constraint "exercises_laterality_check" CHECK ((laterality = ANY (ARRAY['bilateral'::text, 'unilateral_left'::text, 'unilateral_right'::text, 'unilateral_alternating'::text]))) not valid;
-
-alter table "public"."exercises" validate constraint "exercises_laterality_check";
-
-alter table "public"."exercises" add constraint "exercises_load_type_check" CHECK ((load_type = ANY (ARRAY['external'::text, 'bodyweight'::text, 'assisted'::text, 'weighted_bodyweight'::text]))) not valid;
-
-alter table "public"."exercises" validate constraint "exercises_load_type_check";
-
-alter table "public"."exercises" add constraint "exercises_mechanic_type_check" CHECK ((mechanic_type = ANY (ARRAY['compound'::text, 'isolation'::text, 'hybrid'::text]))) not valid;
-
-alter table "public"."exercises" validate constraint "exercises_mechanic_type_check";
-
-alter table "public"."exercises" add constraint "exercises_name_primary_equipment_id_key" UNIQUE using index "exercises_name_primary_equipment_id_key";
-
-alter table "public"."exercises" add constraint "exercises_primary_equipment_id_fkey" FOREIGN KEY (primary_equipment_id) REFERENCES equipment_types(id) ON DELETE SET NULL not valid;
-
-alter table "public"."exercises" validate constraint "exercises_primary_equipment_id_fkey";
-
-alter table "public"."exercises" add constraint "exercises_secondary_equipment_id_fkey" FOREIGN KEY (secondary_equipment_id) REFERENCES equipment_types(id) ON DELETE SET NULL not valid;
-
-alter table "public"."exercises" validate constraint "exercises_secondary_equipment_id_fkey";
-
-alter table "public"."memories" add constraint "memories_conversation_id_fkey" FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE not valid;
-
-alter table "public"."memories" validate constraint "memories_conversation_id_fkey";
-
-alter table "public"."memories" add constraint "memories_importance_score_check" CHECK (((importance_score >= (0)::numeric) AND (importance_score <= (1)::numeric))) not valid;
-
-alter table "public"."memories" validate constraint "memories_importance_score_check";
-
-alter table "public"."memories" add constraint "memories_memory_type_check" CHECK ((memory_type = ANY (ARRAY['conversation'::text, 'preference'::text, 'goal'::text, 'achievement'::text, 'feedback'::text]))) not valid;
-
-alter table "public"."memories" validate constraint "memories_memory_type_check";
-
-alter table "public"."memories" add constraint "memories_user_id_fkey" FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE not valid;
-
-alter table "public"."memories" validate constraint "memories_user_id_fkey";
-
-alter table "public"."movement_patterns" add constraint "movement_patterns_name_key" UNIQUE using index "movement_patterns_name_key";
-
-alter table "public"."muscle_groups" add constraint "muscle_groups_muscle_region_check" CHECK ((muscle_region = ANY (ARRAY['upper'::text, 'lower'::text, 'core'::text, 'full_body'::text, 'posterior_chain'::text]))) not valid;
-
-alter table "public"."muscle_groups" validate constraint "muscle_groups_muscle_region_check";
-
-alter table "public"."muscle_groups" add constraint "muscle_groups_name_key" UNIQUE using index "muscle_groups_name_key";
-
-alter table "public"."plan_exercises" add constraint "plan_exercises_day_of_week_check" CHECK (((day_of_week >= 1) AND (day_of_week <= 7))) not valid;
-
-alter table "public"."plan_exercises" validate constraint "plan_exercises_day_of_week_check";
-
-alter table "public"."plan_exercises" add constraint "plan_exercises_exercise_id_fkey" FOREIGN KEY (exercise_id) REFERENCES exercises(id) ON DELETE CASCADE not valid;
-
-alter table "public"."plan_exercises" validate constraint "plan_exercises_exercise_id_fkey";
-
-alter table "public"."plan_exercises" add constraint "plan_exercises_order_in_day_check" CHECK ((order_in_day > 0)) not valid;
-
-alter table "public"."plan_exercises" validate constraint "plan_exercises_order_in_day_check";
-
-alter table "public"."plan_exercises" add constraint "plan_exercises_plan_id_day_of_week_order_in_day_key" UNIQUE using index "plan_exercises_plan_id_day_of_week_order_in_day_key";
-
-alter table "public"."plan_exercises" add constraint "plan_exercises_plan_id_fkey" FOREIGN KEY (plan_id) REFERENCES plans(id) ON DELETE CASCADE not valid;
-
-alter table "public"."plan_exercises" validate constraint "plan_exercises_plan_id_fkey";
-
-alter table "public"."plan_exercises" add constraint "plan_exercises_rest_seconds_check" CHECK ((rest_seconds >= 0)) not valid;
-
-alter table "public"."plan_exercises" validate constraint "plan_exercises_rest_seconds_check";
-
-alter table "public"."plan_exercises" add constraint "plan_exercises_sets_check" CHECK ((sets > 0)) not valid;
-
-alter table "public"."plan_exercises" validate constraint "plan_exercises_sets_check";
-
-alter table "public"."plans" add constraint "plans_days_per_week_check" CHECK (((days_per_week >= 1) AND (days_per_week <= 7))) not valid;
-
-alter table "public"."plans" validate constraint "plans_days_per_week_check";
-
-alter table "public"."plans" add constraint "plans_difficulty_level_check" CHECK ((difficulty_level = ANY (ARRAY['beginner'::text, 'intermediate'::text, 'advanced'::text]))) not valid;
-
-alter table "public"."plans" validate constraint "plans_difficulty_level_check";
-
-alter table "public"."plans" add constraint "plans_duration_weeks_check" CHECK ((duration_weeks > 0)) not valid;
-
-alter table "public"."plans" validate constraint "plans_duration_weeks_check";
-
-alter table "public"."plans" add constraint "plans_parent_plan_id_fkey" FOREIGN KEY (parent_plan_id) REFERENCES plans(id) not valid;
-
-alter table "public"."plans" validate constraint "plans_parent_plan_id_fkey";
-
-alter table "public"."plans" add constraint "plans_user_id_fkey" FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE not valid;
-
-alter table "public"."plans" validate constraint "plans_user_id_fkey";
-
-alter table "public"."plans" add constraint "plans_user_id_name_version_number_key" UNIQUE using index "plans_user_id_name_version_number_key";
-
-alter table "public"."profiles" add constraint "profiles_affinity_score_check" CHECK ((affinity_score >= 0)) not valid;
-
-alter table "public"."profiles" validate constraint "profiles_affinity_score_check";
-
-alter table "public"."profiles" add constraint "profiles_age_check" CHECK (((age >= 13) AND (age <= 120))) not valid;
-
-alter table "public"."profiles" validate constraint "profiles_age_check";
-
-alter table "public"."profiles" add constraint "profiles_fitness_level_check" CHECK ((fitness_level = ANY (ARRAY['beginner'::text, 'intermediate'::text, 'advanced'::text]))) not valid;
-
-alter table "public"."profiles" validate constraint "profiles_fitness_level_check";
-
-alter table "public"."profiles" add constraint "profiles_id_fkey" FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE CASCADE not valid;
-
-alter table "public"."profiles" validate constraint "profiles_id_fkey";
-
-alter table "public"."profiles" add constraint "profiles_username_key" UNIQUE using index "profiles_username_key";
-
-alter table "public"."sets" add constraint "sets_assistance_type_check" CHECK ((assistance_type = ANY (ARRAY['none'::text, 'spotter'::text, 'machine_assist'::text, 'band_assist'::text]))) not valid;
-
-alter table "public"."sets" validate constraint "sets_assistance_type_check";
-
-alter table "public"."sets" add constraint "sets_exercise_id_fkey" FOREIGN KEY (exercise_id) REFERENCES exercises(id) ON DELETE CASCADE not valid;
-
-alter table "public"."sets" validate constraint "sets_exercise_id_fkey";
-
-alter table "public"."sets" add constraint "sets_failure_type_check" CHECK ((failure_type = ANY (ARRAY['muscular'::text, 'form'::text, 'cardiovascular'::text, 'motivation'::text]))) not valid;
-
-alter table "public"."sets" validate constraint "sets_failure_type_check";
-
-alter table "public"."sets" add constraint "sets_form_quality_check" CHECK (((form_quality >= 1) AND (form_quality <= 5))) not valid;
-
-alter table "public"."sets" validate constraint "sets_form_quality_check";
-
-alter table "public"."sets" add constraint "sets_intensity_percentage_check" CHECK (((intensity_percentage >= (0)::numeric) AND (intensity_percentage <= (200)::numeric))) not valid;
-
-alter table "public"."sets" validate constraint "sets_intensity_percentage_check";
-
-alter table "public"."sets" add constraint "sets_range_of_motion_quality_check" CHECK ((range_of_motion_quality = ANY (ARRAY['full'::text, 'partial'::text, 'limited'::text, 'assisted'::text]))) not valid;
-
-alter table "public"."sets" validate constraint "sets_range_of_motion_quality_check";
-
-alter table "public"."sets" add constraint "sets_reps_check" CHECK ((reps > 0)) not valid;
-
-alter table "public"."sets" validate constraint "sets_reps_check";
-
-alter table "public"."sets" add constraint "sets_reps_in_reserve_check" CHECK ((reps_in_reserve >= 0)) not valid;
-
-alter table "public"."sets" validate constraint "sets_reps_in_reserve_check";
-
-alter table "public"."sets" add constraint "sets_rest_taken_seconds_check" CHECK ((rest_taken_seconds >= 0)) not valid;
-
-alter table "public"."sets" validate constraint "sets_rest_taken_seconds_check";
-
-alter table "public"."sets" add constraint "sets_rpe_check" CHECK (((rpe >= 1) AND (rpe <= 10))) not valid;
-
-alter table "public"."sets" validate constraint "sets_rpe_check";
-
-alter table "public"."sets" add constraint "sets_set_number_check" CHECK ((set_number > 0)) not valid;
-
-alter table "public"."sets" validate constraint "sets_set_number_check";
-
-alter table "public"."sets" add constraint "sets_set_type_check" CHECK ((set_type = ANY (ARRAY['working'::text, 'warmup'::text, 'backoff'::text, 'drop'::text, 'cluster'::text, 'rest_pause'::text, 'amrap'::text]))) not valid;
-
-alter table "public"."sets" validate constraint "sets_set_type_check";
-
-alter table "public"."sets" add constraint "sets_weight_check" CHECK ((weight >= (0)::numeric)) not valid;
-
-alter table "public"."sets" validate constraint "sets_weight_check";
-
-alter table "public"."sets" add constraint "sets_workout_session_id_fkey" FOREIGN KEY (workout_session_id) REFERENCES workout_sessions(id) ON DELETE CASCADE not valid;
-
-alter table "public"."sets" validate constraint "sets_workout_session_id_fkey";
-
-alter table "public"."training_styles" add constraint "training_styles_name_key" UNIQUE using index "training_styles_name_key";
-
-alter table "public"."workout_sessions" add constraint "workout_sessions_mood_check" CHECK ((mood = ANY (ARRAY['great'::text, 'good'::text, 'neutral'::text, 'tired'::text, 'exhausted'::text]))) not valid;
-
-alter table "public"."workout_sessions" validate constraint "workout_sessions_mood_check";
-
-alter table "public"."workout_sessions" add constraint "workout_sessions_overall_rpe_check" CHECK (((overall_rpe >= 1) AND (overall_rpe <= 10))) not valid;
-
-alter table "public"."workout_sessions" validate constraint "workout_sessions_overall_rpe_check";
-
-alter table "public"."workout_sessions" add constraint "workout_sessions_plan_id_fkey" FOREIGN KEY (plan_id) REFERENCES plans(id) ON DELETE SET NULL not valid;
-
-alter table "public"."workout_sessions" validate constraint "workout_sessions_plan_id_fkey";
-
-alter table "public"."workout_sessions" add constraint "workout_sessions_post_workout_energy_check" CHECK (((post_workout_energy >= 1) AND (post_workout_energy <= 10))) not valid;
-
-alter table "public"."workout_sessions" validate constraint "workout_sessions_post_workout_energy_check";
-
-alter table "public"."workout_sessions" add constraint "workout_sessions_pre_workout_energy_check" CHECK (((pre_workout_energy >= 1) AND (pre_workout_energy <= 10))) not valid;
-
-alter table "public"."workout_sessions" validate constraint "workout_sessions_pre_workout_energy_check";
-
-alter table "public"."workout_sessions" add constraint "workout_sessions_training_phase_check" CHECK ((training_phase = ANY (ARRAY['accumulation'::text, 'intensification'::text, 'realization'::text, 'deload'::text, 'testing'::text]))) not valid;
-
-alter table "public"."workout_sessions" validate constraint "workout_sessions_training_phase_check";
-
-alter table "public"."workout_sessions" add constraint "workout_sessions_user_id_fkey" FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE not valid;
-
-alter table "public"."workout_sessions" validate constraint "workout_sessions_user_id_fkey";
-
-alter table "public"."workout_sessions" add constraint "workout_sessions_workout_type_check" CHECK ((workout_type = ANY (ARRAY['strength'::text, 'hypertrophy'::text, 'power'::text, 'endurance'::text, 'mixed'::text, 'technique'::text, 'deload'::text]))) not valid;
-
-alter table "public"."workout_sessions" validate constraint "workout_sessions_workout_type_check";
-
-set check_function_bodies = off;
-
+-- Enable RLS (policies defined in migrations)
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+
+-- =============================================================================
+-- PROFILE-SPECIFIC FUNCTIONS
+-- =============================================================================
+
+-- Function to handle new user creation from auth.users
+-- Automatically creates a profile entry when a new user signs up
+-- SECURITY: Uses empty search_path to prevent search path manipulation attacks
 CREATE OR REPLACE FUNCTION public.handle_new_user()
- RETURNS trigger
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO ''
-AS $function$
+RETURNS TRIGGER
+SECURITY DEFINER
+SET search_path = ''
+AS $$
 BEGIN
     INSERT INTO public.profiles (id, username, full_name)
     VALUES (
@@ -716,15 +161,21 @@ BEGIN
     );
     RETURN NEW;
 END;
-$function$
-;
+$$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION public.increment_affinity_score(p_user_id uuid, p_points integer DEFAULT 1)
- RETURNS integer
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO ''
-AS $function$
+-- Create trigger on auth.users to automatically create profile entries
+CREATE TRIGGER on_auth_user_created
+    AFTER INSERT ON auth.users
+    FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- Function to increment user affinity score
+-- Used when users complete workouts or have positive AI interactions
+-- SECURITY: Uses empty search_path to prevent search path manipulation attacks
+CREATE OR REPLACE FUNCTION public.increment_affinity_score(p_user_id UUID, p_points INTEGER DEFAULT 1)
+RETURNS INTEGER 
+SECURITY DEFINER
+SET search_path = ''
+AS $$
 DECLARE
     new_score INTEGER;
 BEGIN
@@ -735,15 +186,486 @@ BEGIN
     
     RETURN new_score;
 END;
-$function$
-;
+$$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION public.search_memories(p_user_id uuid, p_query_embedding halfvec, p_limit integer DEFAULT 10, p_threshold double precision DEFAULT 0.7)
- RETURNS TABLE(id uuid, content text, memory_type text, importance_score numeric, similarity double precision, created_at timestamp with time zone, metadata jsonb)
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO ''
-AS $function$
+-- =============================================================================
+-- COMMENTS
+-- =============================================================================
+
+COMMENT ON TABLE public.profiles IS 'User profiles extending Supabase auth with fitness-specific data and AI companion affinity';
+COMMENT ON COLUMN public.profiles.id IS 'Foreign key to auth.users - same user across Supabase auth and application';
+COMMENT ON COLUMN public.profiles.username IS 'Unique display name chosen by user for app identification';
+COMMENT ON COLUMN public.profiles.affinity_score IS 'Tracks user engagement with AI companion, incremented by workout completion and positive interactions';
+COMMENT ON COLUMN public.profiles.goals IS 'Array of user fitness goals (e.g., "lose_weight", "build_muscle", "improve_endurance")';
+COMMENT ON COLUMN public.profiles.preferences IS 'JSONB object storing user preferences for workouts, AI personality, units, etc.';
+COMMENT ON COLUMN public.profiles.fitness_level IS 'Self-reported fitness level used for exercise and plan recommendations';-- =============================================================================
+-- EXERCISES TABLE
+-- =============================================================================
+-- Comprehensive exercise database with detailed biomechanical classifications
+-- Central to the workout planning and tracking system
+-- =============================================================================
+
+-- Enhanced exercises table with comprehensive classification
+CREATE TABLE IF NOT EXISTS public.exercises (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name TEXT NOT NULL,
+    description TEXT,
+    instructions TEXT[],
+    tips TEXT[],
+    -- Enhanced classification fields
+    primary_equipment_id UUID REFERENCES public.equipment_types(id) ON DELETE SET NULL,
+    secondary_equipment_id UUID REFERENCES public.equipment_types(id) ON DELETE SET NULL,
+    force_vector TEXT CHECK (force_vector IN ('vertical', 'horizontal', 'lateral', 'rotational', 'multi_planar')),
+    exercise_category TEXT CHECK (exercise_category IN ('strength', 'cardio', 'mobility', 'plyometric', 'sport_specific', 'corrective', 'balance', 'hypertrophy')),
+    mechanic_type TEXT CHECK (mechanic_type IN ('compound', 'isolation', 'hybrid')),
+    body_region TEXT CHECK (body_region IN ('upper', 'lower', 'full_body', 'core')),
+    difficulty_level TEXT CHECK (difficulty_level IN ('beginner', 'intermediate', 'advanced', 'expert')),
+    -- Unilateral/bilateral classification
+    laterality TEXT CHECK (laterality IN ('bilateral', 'unilateral_left', 'unilateral_right', 'unilateral_alternating')),
+    -- Load type
+    load_type TEXT CHECK (load_type IN ('external', 'bodyweight', 'assisted', 'weighted_bodyweight')),
+    -- Metadata for future expansion
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(name, primary_equipment_id)
+);
+
+-- Indexes
+CREATE INDEX IF NOT EXISTS idx_exercises_primary_equipment ON public.exercises(primary_equipment_id);
+CREATE INDEX IF NOT EXISTS idx_exercises_body_region ON public.exercises(body_region);
+CREATE INDEX IF NOT EXISTS idx_exercises_category ON public.exercises(exercise_category);
+
+-- Enable RLS (policies defined in migrations)
+ALTER TABLE public.exercises ENABLE ROW LEVEL SECURITY;
+
+-- =============================================================================
+-- COMMENTS
+-- =============================================================================
+
+COMMENT ON TABLE public.exercises IS 'Comprehensive exercise database with detailed biomechanical and training classifications';
+COMMENT ON COLUMN public.exercises.force_vector IS 'Primary direction of force application during the exercise movement';
+COMMENT ON COLUMN public.exercises.mechanic_type IS 'Joint involvement classification - compound (multi-joint), isolation (single-joint), or hybrid';
+COMMENT ON COLUMN public.exercises.laterality IS 'Whether exercise is performed bilaterally or unilaterally (one side at a time)';
+COMMENT ON COLUMN public.exercises.load_type IS 'Type of resistance used - external weights, bodyweight, or assisted variations';
+COMMENT ON COLUMN public.exercises.metadata IS 'Extensible JSON object for future exercise data and integrations';-- =============================================================================
+-- EXERCISE MOVEMENT PATTERNS JUNCTION TABLE
+-- =============================================================================
+-- Many-to-many relationship between exercises and fundamental movement patterns
+-- Allows exercises to be classified by multiple movement patterns
+-- =============================================================================
+
+-- Junction table for exercise movement patterns (many-to-many)
+CREATE TABLE IF NOT EXISTS public.exercise_movement_patterns (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    exercise_id UUID NOT NULL REFERENCES public.exercises(id) ON DELETE CASCADE,
+    movement_pattern_id UUID NOT NULL REFERENCES public.movement_patterns(id) ON DELETE CASCADE,
+    is_primary BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(exercise_id, movement_pattern_id)
+);
+
+-- Indexes for efficient queries
+CREATE INDEX IF NOT EXISTS idx_exercise_movement_patterns_exercise ON public.exercise_movement_patterns(exercise_id);
+CREATE INDEX IF NOT EXISTS idx_exercise_movement_patterns_pattern ON public.exercise_movement_patterns(movement_pattern_id);
+
+-- Enable RLS (policies defined in migrations)
+ALTER TABLE public.exercise_movement_patterns ENABLE ROW LEVEL SECURITY;
+
+-- Comments
+COMMENT ON TABLE public.exercise_movement_patterns IS 'Many-to-many relationship between exercises and fundamental movement patterns';
+COMMENT ON COLUMN public.exercise_movement_patterns.is_primary IS 'Whether this is the primary movement pattern for the exercise (vs secondary/accessory pattern)';-- =============================================================================
+-- EXERCISE MUSCLES JUNCTION TABLE
+-- =============================================================================
+-- Many-to-many relationship defining which muscles are worked by each exercise
+-- Includes muscle role (primary, secondary, stabilizer) and activation level
+-- =============================================================================
+
+-- Junction table for exercise muscle groups (many-to-many with role)
+CREATE TABLE IF NOT EXISTS public.exercise_muscles (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    exercise_id UUID NOT NULL REFERENCES public.exercises(id) ON DELETE CASCADE,
+    muscle_group_id UUID NOT NULL REFERENCES public.muscle_groups(id) ON DELETE CASCADE,
+    muscle_role TEXT NOT NULL CHECK (muscle_role IN ('primary', 'secondary', 'stabilizer')),
+    activation_level INTEGER CHECK (activation_level >= 1 AND activation_level <= 5),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(exercise_id, muscle_group_id)
+);
+
+-- Indexes for efficient queries
+CREATE INDEX IF NOT EXISTS idx_exercise_muscles_exercise ON public.exercise_muscles(exercise_id);
+CREATE INDEX IF NOT EXISTS idx_exercise_muscles_muscle ON public.exercise_muscles(muscle_group_id);
+CREATE INDEX IF NOT EXISTS idx_exercise_muscles_role ON public.exercise_muscles(muscle_role);
+
+-- Enable RLS (policies defined in migrations)
+ALTER TABLE public.exercise_muscles ENABLE ROW LEVEL SECURITY;
+
+-- Comments
+COMMENT ON TABLE public.exercise_muscles IS 'Many-to-many relationship defining which muscles are worked by each exercise and their roles';
+COMMENT ON COLUMN public.exercise_muscles.muscle_role IS 'Role of muscle group in exercise - primary mover, secondary mover, or stabilizer';
+COMMENT ON COLUMN public.exercise_muscles.activation_level IS 'Relative activation level from 1 (minimal) to 5 (maximal) for exercise programming';-- =============================================================================
+-- EXERCISE TRAINING STYLES JUNCTION TABLE
+-- =============================================================================
+-- Links exercises to training styles with suitability metrics
+-- Helps recommend exercises based on training methodology
+-- =============================================================================
+
+-- Junction table linking exercises to training styles with suitability metrics
+CREATE TABLE IF NOT EXISTS public.exercise_training_styles (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    exercise_id UUID NOT NULL REFERENCES public.exercises(id) ON DELETE CASCADE,
+    training_style_id UUID NOT NULL REFERENCES public.training_styles(id) ON DELETE CASCADE,
+    suitability_score INTEGER NOT NULL CHECK (suitability_score >= 1 AND suitability_score <= 5),
+    optimal_rep_min INTEGER CHECK (optimal_rep_min > 0),
+    optimal_rep_max INTEGER CHECK (optimal_rep_max > 0 AND optimal_rep_max >= optimal_rep_min),
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(exercise_id, training_style_id)
+);
+
+-- Indexes for efficient queries
+CREATE INDEX IF NOT EXISTS idx_exercise_training_styles_exercise ON public.exercise_training_styles(exercise_id);
+CREATE INDEX IF NOT EXISTS idx_exercise_training_styles_style ON public.exercise_training_styles(training_style_id);
+
+-- Enable RLS (policies defined in migrations)
+ALTER TABLE public.exercise_training_styles ENABLE ROW LEVEL SECURITY;
+
+-- Comments
+COMMENT ON TABLE public.exercise_training_styles IS 'Many-to-many relationship defining exercise suitability for different training styles';
+COMMENT ON COLUMN public.exercise_training_styles.suitability_score IS 'How well-suited this exercise is for the training style (1=poor, 5=excellent)';
+COMMENT ON COLUMN public.exercise_training_styles.optimal_rep_min IS 'Minimum recommended reps for this exercise in this training style';
+COMMENT ON COLUMN public.exercise_training_styles.optimal_rep_max IS 'Maximum recommended reps for this exercise in this training style';
+COMMENT ON COLUMN public.exercise_training_styles.notes IS 'Additional notes about using this exercise in this training style';-- =============================================================================
+-- EXERCISE RELATIONSHIPS TABLE
+-- =============================================================================
+-- Defines relationships between exercises for programming and progression
+-- Includes variations, progressions, regressions, alternatives, and pairings
+-- =============================================================================
+
+-- Exercise variations/alternatives relationship
+CREATE TABLE IF NOT EXISTS public.exercise_relationships (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    parent_exercise_id UUID NOT NULL REFERENCES public.exercises(id) ON DELETE CASCADE,
+    related_exercise_id UUID NOT NULL REFERENCES public.exercises(id) ON DELETE CASCADE,
+    relationship_type TEXT NOT NULL CHECK (relationship_type IN ('variation', 'progression', 'regression', 'alternative', 'antagonist', 'superset')),
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(parent_exercise_id, related_exercise_id, relationship_type),
+    CHECK (parent_exercise_id != related_exercise_id)
+);
+
+-- Indexes for efficient queries
+CREATE INDEX IF NOT EXISTS idx_exercise_relationships_parent ON public.exercise_relationships(parent_exercise_id);
+CREATE INDEX IF NOT EXISTS idx_exercise_relationships_related ON public.exercise_relationships(related_exercise_id);
+CREATE INDEX IF NOT EXISTS idx_exercise_relationships_type ON public.exercise_relationships(relationship_type);
+
+-- Enable RLS (policies defined in migrations)
+ALTER TABLE public.exercise_relationships ENABLE ROW LEVEL SECURITY;
+
+-- Comments
+COMMENT ON TABLE public.exercise_relationships IS 'Defines relationships between exercises for programming and progression recommendations';
+COMMENT ON COLUMN public.exercise_relationships.relationship_type IS 'Type of relationship - variation, progression/regression, alternative, antagonist pair, or superset pairing';
+COMMENT ON COLUMN public.exercise_relationships.notes IS 'Additional context about when to use this relationship (e.g., equipment substitution, injury modification)';-- =============================================================================
+-- PLANS TABLE
+-- =============================================================================
+-- Versioned workout plan templates that can be followed by users or shared publicly
+-- Plans are immutable once created - modifications create new versions
+-- =============================================================================
+
+-- Plans table (workout plan templates)
+CREATE TABLE IF NOT EXISTS public.plans (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    description TEXT,
+    training_style TEXT REFERENCES public.training_styles(name) ON DELETE RESTRICT,
+    goal TEXT,
+    difficulty_level TEXT CHECK (difficulty_level IN ('beginner', 'intermediate', 'advanced')),
+    duration_weeks INTEGER CHECK (duration_weeks > 0),
+    days_per_week INTEGER CHECK (days_per_week >= 1 AND days_per_week <= 7),
+    is_public BOOLEAN DEFAULT false,
+    metadata JSONB DEFAULT '{}',
+    -- Versioning fields for immutable plan history
+    version_number INTEGER NOT NULL DEFAULT 1,
+    parent_plan_id UUID REFERENCES public.plans(id),
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    deleted_at TIMESTAMPTZ DEFAULT NULL,
+    -- Ensure unique versioning per user and plan name
+    UNIQUE(user_id, name, version_number)
+);
+
+-- Indexes
+CREATE INDEX IF NOT EXISTS idx_plans_user_id ON public.plans(user_id);
+CREATE INDEX IF NOT EXISTS idx_plans_is_public ON public.plans(is_public) WHERE is_public = true;
+CREATE INDEX IF NOT EXISTS idx_plans_parent ON public.plans(parent_plan_id);
+CREATE INDEX IF NOT EXISTS idx_plans_training_style ON public.plans(training_style);
+CREATE INDEX IF NOT EXISTS idx_plans_deleted_at ON public.plans(deleted_at) WHERE deleted_at IS NULL;
+
+-- Enable RLS (policies defined in migrations)
+ALTER TABLE public.plans ENABLE ROW LEVEL SECURITY;
+
+-- =============================================================================
+-- COMMENTS
+-- =============================================================================
+
+COMMENT ON TABLE public.plans IS 'Versioned workout plan templates that can be followed by users or shared publicly. Plans are immutable once created - modifications create new versions.';
+COMMENT ON COLUMN public.plans.training_style IS 'Primary training style/methodology for this plan (references training_styles.name)';
+COMMENT ON COLUMN public.plans.goal IS 'Primary training goal this plan targets (e.g., "strength", "hypertrophy", "weight_loss")';
+COMMENT ON COLUMN public.plans.duration_weeks IS 'Planned duration in weeks before progression or plan change';
+COMMENT ON COLUMN public.plans.days_per_week IS 'Intended training frequency per week';
+COMMENT ON COLUMN public.plans.is_public IS 'Whether this plan can be discovered and used by other users';
+COMMENT ON COLUMN public.plans.metadata IS 'Additional plan configuration like periodization, rest weeks, deload protocols';
+COMMENT ON COLUMN public.plans.version_number IS 'Version number for this plan iteration (increments with each modification)';
+COMMENT ON COLUMN public.plans.parent_plan_id IS 'References the original plan this version derives from (NULL for v1)';
+COMMENT ON COLUMN public.plans.is_active IS 'Whether this is the current active version of the plan (only one version per plan name should be active)';
+COMMENT ON COLUMN public.plans.deleted_at IS 'Timestamp when plan was soft-deleted. NULL means plan is active/not deleted.';-- =============================================================================
+-- PLAN EXERCISES JUNCTION TABLE
+-- =============================================================================
+-- Defines exercises within workout plans and their programming parameters
+-- Links plans to exercises with scheduling and set/rep schemes
+-- =============================================================================
+
+-- Plan_exercises junction table
+CREATE TABLE IF NOT EXISTS public.plan_exercises (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    plan_id UUID NOT NULL REFERENCES public.plans(id) ON DELETE CASCADE,
+    exercise_id UUID NOT NULL REFERENCES public.exercises(id) ON DELETE CASCADE,
+    day_of_week INTEGER NOT NULL CHECK (day_of_week >= 1 AND day_of_week <= 7),
+    order_in_day INTEGER NOT NULL CHECK (order_in_day > 0),
+    sets INTEGER NOT NULL CHECK (sets > 0),
+    target_reps INTEGER[] NOT NULL,
+    rest_seconds INTEGER CHECK (rest_seconds >= 0),
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(plan_id, day_of_week, order_in_day)
+);
+
+-- Indexes for efficient queries
+CREATE INDEX IF NOT EXISTS idx_plan_exercises_plan_id ON public.plan_exercises(plan_id);
+CREATE INDEX IF NOT EXISTS idx_plan_exercises_exercise_id ON public.plan_exercises(exercise_id);
+CREATE INDEX IF NOT EXISTS idx_plan_exercises_day ON public.plan_exercises(day_of_week);
+
+-- Enable RLS (policies defined in migrations)
+ALTER TABLE public.plan_exercises ENABLE ROW LEVEL SECURITY;
+
+-- =============================================================================
+-- COMMENTS
+-- =============================================================================
+
+COMMENT ON TABLE public.plan_exercises IS 'Junction table defining exercises within workout plans and their programming parameters';
+COMMENT ON COLUMN public.plan_exercises.day_of_week IS 'Day of week (1=Monday, 7=Sunday) when this exercise is scheduled';
+COMMENT ON COLUMN public.plan_exercises.order_in_day IS 'Order of exercise within the workout session (1st, 2nd, 3rd, etc.)';
+COMMENT ON COLUMN public.plan_exercises.target_reps IS 'Array of target rep ranges for each set (e.g., [8,10,12] for 3 sets)';
+COMMENT ON COLUMN public.plan_exercises.rest_seconds IS 'Recommended rest period between sets in seconds';-- =============================================================================
+-- WORKOUT SESSIONS TABLE
+-- =============================================================================
+-- Individual workout instances with comprehensive performance and wellness tracking
+-- Tracks actual workouts performed by users with RPE and mood data
+-- =============================================================================
+
+-- Workout_sessions table (actual workout instances) with enhanced tracking
+CREATE TABLE IF NOT EXISTS public.workout_sessions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    plan_id UUID REFERENCES public.plans(id) ON DELETE SET NULL,
+    started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    completed_at TIMESTAMPTZ,
+    notes TEXT,
+    mood TEXT CHECK (mood IN ('great', 'good', 'neutral', 'tired', 'exhausted')),
+    -- Enhanced tracking fields
+    overall_rpe INTEGER CHECK (overall_rpe >= 1 AND overall_rpe <= 10),
+    pre_workout_energy INTEGER CHECK (pre_workout_energy >= 1 AND pre_workout_energy <= 10),
+    post_workout_energy INTEGER CHECK (post_workout_energy >= 1 AND post_workout_energy <= 10),
+    workout_type TEXT CHECK (workout_type IN ('strength', 'hypertrophy', 'power', 'endurance', 'mixed', 'technique', 'deload')),
+    -- Periodization enhancement
+    training_phase TEXT CHECK (training_phase IN ('accumulation', 'intensification', 'realization', 'deload', 'testing')),
+    total_volume DECIMAL(12,2),
+    total_sets INTEGER,
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Indexes
+CREATE INDEX IF NOT EXISTS idx_workout_sessions_user_id ON public.workout_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_workout_sessions_plan_id ON public.workout_sessions(plan_id);
+CREATE INDEX IF NOT EXISTS idx_workout_sessions_started_at ON public.workout_sessions(started_at DESC);
+
+-- Enable RLS (policies defined in migrations)
+ALTER TABLE public.workout_sessions ENABLE ROW LEVEL SECURITY;
+
+-- =============================================================================
+-- COMMENTS
+-- =============================================================================
+
+COMMENT ON TABLE public.workout_sessions IS 'Individual workout instances with comprehensive performance and wellness tracking';
+COMMENT ON COLUMN public.workout_sessions.plan_id IS 'Optional reference to workout plan being followed (null for ad-hoc workouts)';
+COMMENT ON COLUMN public.workout_sessions.started_at IS 'When the workout session began (may differ from created_at)';
+COMMENT ON COLUMN public.workout_sessions.completed_at IS 'When workout was finished - null indicates incomplete/ongoing session';
+COMMENT ON COLUMN public.workout_sessions.mood IS 'Post-workout mood assessment for tracking training impact on wellbeing';
+COMMENT ON COLUMN public.workout_sessions.overall_rpe IS 'Rate of Perceived Exertion (1-10) for entire workout session';
+COMMENT ON COLUMN public.workout_sessions.pre_workout_energy IS 'Energy level before workout (1-10) for readiness correlation';
+COMMENT ON COLUMN public.workout_sessions.post_workout_energy IS 'Energy level after workout (1-10) for recovery tracking';
+COMMENT ON COLUMN public.workout_sessions.training_phase IS 'Current periodization phase for structured programming and progression tracking';
+COMMENT ON COLUMN public.workout_sessions.total_volume IS 'Sum of all volume (weight × reps) for the session';
+COMMENT ON COLUMN public.workout_sessions.total_sets IS 'Total number of sets performed in this session';-- =============================================================================
+-- SETS TABLE
+-- =============================================================================
+-- Individual exercise sets with detailed performance metrics
+-- Most granular level of workout tracking with comprehensive data capture
+-- =============================================================================
+
+-- Enhanced sets table with comprehensive performance tracking
+CREATE TABLE IF NOT EXISTS public.sets (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    workout_session_id UUID NOT NULL REFERENCES public.workout_sessions(id) ON DELETE CASCADE,
+    exercise_id UUID NOT NULL REFERENCES public.exercises(id) ON DELETE CASCADE,
+    set_number INTEGER NOT NULL CHECK (set_number > 0),
+    -- Basic performance data
+    weight DECIMAL(10,2) CHECK (weight >= 0),
+    reps INTEGER NOT NULL CHECK (reps > 0),
+    rest_taken_seconds INTEGER CHECK (rest_taken_seconds >= 0),
+    rpe INTEGER CHECK (rpe >= 1 AND rpe <= 10),
+    -- Enhanced performance tracking
+    volume_load DECIMAL(12,2) GENERATED ALWAYS AS (weight * reps) STORED,
+    tempo TEXT, -- Format: "3-1-2-1" (eccentric-pause-concentric-pause in seconds)
+    range_of_motion_quality TEXT CHECK (range_of_motion_quality IN ('full', 'partial', 'limited', 'assisted')),
+    form_quality INTEGER CHECK (form_quality >= 1 AND form_quality <= 5),
+    -- Intensity tracking
+    estimated_1rm DECIMAL(10,2),
+    intensity_percentage DECIMAL(5,2) CHECK (intensity_percentage >= 0 AND intensity_percentage <= 200),
+    -- Set type classification
+    set_type TEXT CHECK (set_type IN ('working', 'warmup', 'backoff', 'drop', 'cluster', 'rest_pause', 'amrap')),
+    -- Failure tracking
+    reps_in_reserve INTEGER CHECK (reps_in_reserve >= 0),
+    reached_failure BOOLEAN DEFAULT false,
+    failure_type TEXT CHECK (failure_type IN ('muscular', 'form', 'cardiovascular', 'motivation')),
+    -- Environment and conditions
+    equipment_variation TEXT,
+    assistance_type TEXT CHECK (assistance_type IN ('none', 'spotter', 'machine_assist', 'band_assist')),
+    -- Notes and feedback
+    notes TEXT,
+    technique_cues TEXT[],
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Indexes
+CREATE INDEX IF NOT EXISTS idx_sets_workout_session_id ON public.sets(workout_session_id);
+CREATE INDEX IF NOT EXISTS idx_sets_exercise_id ON public.sets(exercise_id);
+CREATE INDEX IF NOT EXISTS idx_sets_set_type ON public.sets(set_type);
+
+-- Enable RLS (policies defined in migrations)
+ALTER TABLE public.sets ENABLE ROW LEVEL SECURITY;
+
+-- =============================================================================
+-- COMMENTS
+-- =============================================================================
+
+COMMENT ON TABLE public.sets IS 'Individual exercise sets with detailed performance metrics for progression tracking and analysis';
+COMMENT ON COLUMN public.sets.set_number IS 'Order of this set within the exercise (1st set, 2nd set, etc.)';
+COMMENT ON COLUMN public.sets.volume_load IS 'Calculated field: weight × reps, automatically updated';
+COMMENT ON COLUMN public.sets.tempo IS 'Tempo notation in format "eccentric-pause-concentric-pause" (e.g., "3-1-2-1")';
+COMMENT ON COLUMN public.sets.range_of_motion_quality IS 'Assessment of range of motion achieved during the set';
+COMMENT ON COLUMN public.sets.form_quality IS 'Subjective form quality rating from 1 (poor) to 5 (perfect)';
+COMMENT ON COLUMN public.sets.estimated_1rm IS 'Calculated or estimated one-rep max based on weight and reps performed';
+COMMENT ON COLUMN public.sets.intensity_percentage IS 'Percentage of estimated 1RM used for this set';
+COMMENT ON COLUMN public.sets.set_type IS 'Classification of set purpose within workout programming';
+COMMENT ON COLUMN public.sets.reps_in_reserve IS 'Estimated reps remaining before failure (RIR) for autoregulation';
+COMMENT ON COLUMN public.sets.failure_type IS 'Type of failure reached if set was taken to failure';
+COMMENT ON COLUMN public.sets.equipment_variation IS 'Specific equipment variation used (e.g., "close_grip", "wide_stance")';
+COMMENT ON COLUMN public.sets.technique_cues IS 'Array of coaching cues or technical notes for this set';-- =============================================================================
+-- CONVERSATIONS TABLE
+-- =============================================================================
+-- AI chat session boundaries and context for managing conversation history
+-- Tracks conversation sessions with the AI fitness companion
+-- =============================================================================
+
+-- Conversations table (AI chat sessions)
+CREATE TABLE IF NOT EXISTS public.conversations (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ended_at TIMESTAMPTZ,
+    context JSONB DEFAULT '{}',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Indexes
+CREATE INDEX IF NOT EXISTS idx_conversations_user_id ON public.conversations(user_id);
+CREATE INDEX IF NOT EXISTS idx_conversations_started_at ON public.conversations(started_at DESC);
+
+-- Enable RLS (policies defined in migrations)
+ALTER TABLE public.conversations ENABLE ROW LEVEL SECURITY;
+
+-- =============================================================================
+-- COMMENTS
+-- =============================================================================
+
+COMMENT ON TABLE public.conversations IS 'AI chat session boundaries and context for managing conversation history and state';
+COMMENT ON COLUMN public.conversations.started_at IS 'When the conversation session began (first message timestamp)';
+COMMENT ON COLUMN public.conversations.ended_at IS 'When the conversation session ended (null for ongoing conversations)';
+COMMENT ON COLUMN public.conversations.context IS 'Session context like conversation summary, user goals, or AI personality state';-- =============================================================================
+-- MEMORIES TABLE
+-- =============================================================================
+-- AI semantic memory store with vector embeddings for personalized context
+-- Uses pgvector for similarity search to retrieve relevant conversation history
+-- =============================================================================
+
+-- Memories table (AI semantic memory with vector embeddings)
+CREATE TABLE IF NOT EXISTS public.memories (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    conversation_id UUID REFERENCES public.conversations(id) ON DELETE CASCADE,
+    content TEXT NOT NULL,
+    embedding extensions.halfvec(3072),
+    memory_type TEXT CHECK (memory_type IN ('conversation', 'preference', 'goal', 'achievement', 'feedback')),
+    importance_score DECIMAL(3,2) CHECK (importance_score >= 0 AND importance_score <= 1),
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Indexes
+CREATE INDEX IF NOT EXISTS idx_memories_user_id ON public.memories(user_id);
+CREATE INDEX IF NOT EXISTS idx_memories_conversation_id ON public.memories(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_memories_memory_type ON public.memories(memory_type);
+
+-- Vector similarity search index (HNSW method for better performance)
+-- HNSW provides faster searches with better recall than IVFFlat for our use case
+CREATE INDEX IF NOT EXISTS idx_memories_embedding ON public.memories 
+    USING hnsw (embedding extensions.halfvec_l2_ops);
+
+-- Enable RLS (policies defined in migrations)
+ALTER TABLE public.memories ENABLE ROW LEVEL SECURITY;
+
+-- =============================================================================
+-- MEMORY-SPECIFIC FUNCTIONS
+-- =============================================================================
+
+-- Function to search memories by vector similarity
+-- Returns memories similar to a query embedding for RAG context
+-- SECURITY: Uses empty search_path to prevent search path manipulation attacks
+CREATE OR REPLACE FUNCTION public.search_memories(
+    p_user_id UUID,
+    p_query_embedding extensions.halfvec(3072),
+    p_limit INTEGER DEFAULT 10,
+    p_threshold FLOAT DEFAULT 0.7
+)
+RETURNS TABLE (
+    id UUID,
+    content TEXT,
+    memory_type TEXT,
+    importance_score DECIMAL,
+    similarity FLOAT,
+    created_at TIMESTAMPTZ,
+    metadata JSONB
+) 
+SECURITY DEFINER
+SET search_path = ''
+AS $$
 BEGIN
     RETURN QUERY
     SELECT 
@@ -761,704 +683,70 @@ BEGIN
     ORDER BY m.embedding OPERATOR(extensions.<=>) p_query_embedding
     LIMIT p_limit;
 END;
-$function$
-;
+$$ LANGUAGE plpgsql;
 
+-- =============================================================================
+-- COMMENTS
+-- =============================================================================
+
+COMMENT ON TABLE public.memories IS 'AI semantic memory store with vector embeddings for personalized context retrieval';
+COMMENT ON COLUMN public.memories.content IS 'Text content of the memory for semantic search and AI context';
+COMMENT ON COLUMN public.memories.embedding IS 'Vector embedding of content for similarity search (3072 dimensions for gemini-embeddings-001)';
+COMMENT ON COLUMN public.memories.memory_type IS 'Category of memory for filtering and importance weighting';
+COMMENT ON COLUMN public.memories.importance_score IS 'Dynamic importance score from 0-1, may be updated based on relevance and recency';
+COMMENT ON COLUMN public.memories.metadata IS 'Additional memory context like emotion, entities, or confidence scores';-- =============================================================================
+-- SHARED FUNCTIONS
+-- =============================================================================
+-- Cross-table utility functions used by multiple tables
+-- Includes timestamp management and other shared functionality
+-- =============================================================================
+
+-- Function to automatically update updated_at timestamp
+-- Used by multiple tables that track modification times
+-- SECURITY: Uses empty search_path to prevent search path manipulation attacks
 CREATE OR REPLACE FUNCTION public.update_updated_at_column()
- RETURNS trigger
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO ''
-AS $function$
+RETURNS TRIGGER 
+SECURITY DEFINER
+SET search_path = ''
+AS $$
 BEGIN
     NEW.updated_at = CURRENT_TIMESTAMP;
     RETURN NEW;
 END;
-$function$
-;
-
-grant delete on table "public"."conversations" to "anon";
-
-grant insert on table "public"."conversations" to "anon";
-
-grant references on table "public"."conversations" to "anon";
-
-grant select on table "public"."conversations" to "anon";
-
-grant trigger on table "public"."conversations" to "anon";
-
-grant truncate on table "public"."conversations" to "anon";
-
-grant update on table "public"."conversations" to "anon";
-
-grant delete on table "public"."conversations" to "authenticated";
-
-grant insert on table "public"."conversations" to "authenticated";
-
-grant references on table "public"."conversations" to "authenticated";
-
-grant select on table "public"."conversations" to "authenticated";
-
-grant trigger on table "public"."conversations" to "authenticated";
-
-grant truncate on table "public"."conversations" to "authenticated";
-
-grant update on table "public"."conversations" to "authenticated";
-
-grant delete on table "public"."conversations" to "service_role";
-
-grant insert on table "public"."conversations" to "service_role";
-
-grant references on table "public"."conversations" to "service_role";
-
-grant select on table "public"."conversations" to "service_role";
-
-grant trigger on table "public"."conversations" to "service_role";
-
-grant truncate on table "public"."conversations" to "service_role";
-
-grant update on table "public"."conversations" to "service_role";
-
-grant delete on table "public"."equipment_types" to "anon";
-
-grant insert on table "public"."equipment_types" to "anon";
-
-grant references on table "public"."equipment_types" to "anon";
-
-grant select on table "public"."equipment_types" to "anon";
-
-grant trigger on table "public"."equipment_types" to "anon";
-
-grant truncate on table "public"."equipment_types" to "anon";
-
-grant update on table "public"."equipment_types" to "anon";
-
-grant delete on table "public"."equipment_types" to "authenticated";
-
-grant insert on table "public"."equipment_types" to "authenticated";
-
-grant references on table "public"."equipment_types" to "authenticated";
-
-grant select on table "public"."equipment_types" to "authenticated";
-
-grant trigger on table "public"."equipment_types" to "authenticated";
-
-grant truncate on table "public"."equipment_types" to "authenticated";
-
-grant update on table "public"."equipment_types" to "authenticated";
-
-grant delete on table "public"."equipment_types" to "service_role";
-
-grant insert on table "public"."equipment_types" to "service_role";
-
-grant references on table "public"."equipment_types" to "service_role";
-
-grant select on table "public"."equipment_types" to "service_role";
-
-grant trigger on table "public"."equipment_types" to "service_role";
-
-grant truncate on table "public"."equipment_types" to "service_role";
-
-grant update on table "public"."equipment_types" to "service_role";
-
-grant delete on table "public"."exercise_movement_patterns" to "anon";
-
-grant insert on table "public"."exercise_movement_patterns" to "anon";
-
-grant references on table "public"."exercise_movement_patterns" to "anon";
-
-grant select on table "public"."exercise_movement_patterns" to "anon";
-
-grant trigger on table "public"."exercise_movement_patterns" to "anon";
-
-grant truncate on table "public"."exercise_movement_patterns" to "anon";
-
-grant update on table "public"."exercise_movement_patterns" to "anon";
-
-grant delete on table "public"."exercise_movement_patterns" to "authenticated";
-
-grant insert on table "public"."exercise_movement_patterns" to "authenticated";
-
-grant references on table "public"."exercise_movement_patterns" to "authenticated";
-
-grant select on table "public"."exercise_movement_patterns" to "authenticated";
-
-grant trigger on table "public"."exercise_movement_patterns" to "authenticated";
-
-grant truncate on table "public"."exercise_movement_patterns" to "authenticated";
-
-grant update on table "public"."exercise_movement_patterns" to "authenticated";
-
-grant delete on table "public"."exercise_movement_patterns" to "service_role";
-
-grant insert on table "public"."exercise_movement_patterns" to "service_role";
-
-grant references on table "public"."exercise_movement_patterns" to "service_role";
-
-grant select on table "public"."exercise_movement_patterns" to "service_role";
-
-grant trigger on table "public"."exercise_movement_patterns" to "service_role";
-
-grant truncate on table "public"."exercise_movement_patterns" to "service_role";
-
-grant update on table "public"."exercise_movement_patterns" to "service_role";
-
-grant delete on table "public"."exercise_muscles" to "anon";
-
-grant insert on table "public"."exercise_muscles" to "anon";
-
-grant references on table "public"."exercise_muscles" to "anon";
-
-grant select on table "public"."exercise_muscles" to "anon";
-
-grant trigger on table "public"."exercise_muscles" to "anon";
-
-grant truncate on table "public"."exercise_muscles" to "anon";
-
-grant update on table "public"."exercise_muscles" to "anon";
-
-grant delete on table "public"."exercise_muscles" to "authenticated";
-
-grant insert on table "public"."exercise_muscles" to "authenticated";
-
-grant references on table "public"."exercise_muscles" to "authenticated";
-
-grant select on table "public"."exercise_muscles" to "authenticated";
-
-grant trigger on table "public"."exercise_muscles" to "authenticated";
-
-grant truncate on table "public"."exercise_muscles" to "authenticated";
-
-grant update on table "public"."exercise_muscles" to "authenticated";
-
-grant delete on table "public"."exercise_muscles" to "service_role";
-
-grant insert on table "public"."exercise_muscles" to "service_role";
-
-grant references on table "public"."exercise_muscles" to "service_role";
-
-grant select on table "public"."exercise_muscles" to "service_role";
-
-grant trigger on table "public"."exercise_muscles" to "service_role";
-
-grant truncate on table "public"."exercise_muscles" to "service_role";
-
-grant update on table "public"."exercise_muscles" to "service_role";
-
-grant delete on table "public"."exercise_relationships" to "anon";
-
-grant insert on table "public"."exercise_relationships" to "anon";
-
-grant references on table "public"."exercise_relationships" to "anon";
-
-grant select on table "public"."exercise_relationships" to "anon";
-
-grant trigger on table "public"."exercise_relationships" to "anon";
-
-grant truncate on table "public"."exercise_relationships" to "anon";
-
-grant update on table "public"."exercise_relationships" to "anon";
-
-grant delete on table "public"."exercise_relationships" to "authenticated";
-
-grant insert on table "public"."exercise_relationships" to "authenticated";
-
-grant references on table "public"."exercise_relationships" to "authenticated";
-
-grant select on table "public"."exercise_relationships" to "authenticated";
-
-grant trigger on table "public"."exercise_relationships" to "authenticated";
-
-grant truncate on table "public"."exercise_relationships" to "authenticated";
-
-grant update on table "public"."exercise_relationships" to "authenticated";
-
-grant delete on table "public"."exercise_relationships" to "service_role";
-
-grant insert on table "public"."exercise_relationships" to "service_role";
-
-grant references on table "public"."exercise_relationships" to "service_role";
-
-grant select on table "public"."exercise_relationships" to "service_role";
-
-grant trigger on table "public"."exercise_relationships" to "service_role";
-
-grant truncate on table "public"."exercise_relationships" to "service_role";
-
-grant update on table "public"."exercise_relationships" to "service_role";
-
-grant delete on table "public"."exercise_training_styles" to "anon";
-
-grant insert on table "public"."exercise_training_styles" to "anon";
-
-grant references on table "public"."exercise_training_styles" to "anon";
-
-grant select on table "public"."exercise_training_styles" to "anon";
-
-grant trigger on table "public"."exercise_training_styles" to "anon";
-
-grant truncate on table "public"."exercise_training_styles" to "anon";
-
-grant update on table "public"."exercise_training_styles" to "anon";
-
-grant delete on table "public"."exercise_training_styles" to "authenticated";
-
-grant insert on table "public"."exercise_training_styles" to "authenticated";
-
-grant references on table "public"."exercise_training_styles" to "authenticated";
-
-grant select on table "public"."exercise_training_styles" to "authenticated";
-
-grant trigger on table "public"."exercise_training_styles" to "authenticated";
-
-grant truncate on table "public"."exercise_training_styles" to "authenticated";
-
-grant update on table "public"."exercise_training_styles" to "authenticated";
-
-grant delete on table "public"."exercise_training_styles" to "service_role";
-
-grant insert on table "public"."exercise_training_styles" to "service_role";
-
-grant references on table "public"."exercise_training_styles" to "service_role";
-
-grant select on table "public"."exercise_training_styles" to "service_role";
-
-grant trigger on table "public"."exercise_training_styles" to "service_role";
-
-grant truncate on table "public"."exercise_training_styles" to "service_role";
-
-grant update on table "public"."exercise_training_styles" to "service_role";
-
-grant delete on table "public"."exercises" to "anon";
-
-grant insert on table "public"."exercises" to "anon";
-
-grant references on table "public"."exercises" to "anon";
-
-grant select on table "public"."exercises" to "anon";
-
-grant trigger on table "public"."exercises" to "anon";
-
-grant truncate on table "public"."exercises" to "anon";
-
-grant update on table "public"."exercises" to "anon";
-
-grant delete on table "public"."exercises" to "authenticated";
-
-grant insert on table "public"."exercises" to "authenticated";
-
-grant references on table "public"."exercises" to "authenticated";
-
-grant select on table "public"."exercises" to "authenticated";
-
-grant trigger on table "public"."exercises" to "authenticated";
-
-grant truncate on table "public"."exercises" to "authenticated";
-
-grant update on table "public"."exercises" to "authenticated";
-
-grant delete on table "public"."exercises" to "service_role";
-
-grant insert on table "public"."exercises" to "service_role";
-
-grant references on table "public"."exercises" to "service_role";
-
-grant select on table "public"."exercises" to "service_role";
-
-grant trigger on table "public"."exercises" to "service_role";
-
-grant truncate on table "public"."exercises" to "service_role";
-
-grant update on table "public"."exercises" to "service_role";
-
-grant delete on table "public"."memories" to "anon";
-
-grant insert on table "public"."memories" to "anon";
-
-grant references on table "public"."memories" to "anon";
-
-grant select on table "public"."memories" to "anon";
-
-grant trigger on table "public"."memories" to "anon";
-
-grant truncate on table "public"."memories" to "anon";
-
-grant update on table "public"."memories" to "anon";
-
-grant delete on table "public"."memories" to "authenticated";
-
-grant insert on table "public"."memories" to "authenticated";
-
-grant references on table "public"."memories" to "authenticated";
-
-grant select on table "public"."memories" to "authenticated";
-
-grant trigger on table "public"."memories" to "authenticated";
-
-grant truncate on table "public"."memories" to "authenticated";
-
-grant update on table "public"."memories" to "authenticated";
-
-grant delete on table "public"."memories" to "service_role";
-
-grant insert on table "public"."memories" to "service_role";
-
-grant references on table "public"."memories" to "service_role";
-
-grant select on table "public"."memories" to "service_role";
-
-grant trigger on table "public"."memories" to "service_role";
-
-grant truncate on table "public"."memories" to "service_role";
-
-grant update on table "public"."memories" to "service_role";
-
-grant delete on table "public"."movement_patterns" to "anon";
-
-grant insert on table "public"."movement_patterns" to "anon";
-
-grant references on table "public"."movement_patterns" to "anon";
-
-grant select on table "public"."movement_patterns" to "anon";
-
-grant trigger on table "public"."movement_patterns" to "anon";
-
-grant truncate on table "public"."movement_patterns" to "anon";
-
-grant update on table "public"."movement_patterns" to "anon";
-
-grant delete on table "public"."movement_patterns" to "authenticated";
-
-grant insert on table "public"."movement_patterns" to "authenticated";
-
-grant references on table "public"."movement_patterns" to "authenticated";
-
-grant select on table "public"."movement_patterns" to "authenticated";
-
-grant trigger on table "public"."movement_patterns" to "authenticated";
-
-grant truncate on table "public"."movement_patterns" to "authenticated";
-
-grant update on table "public"."movement_patterns" to "authenticated";
-
-grant delete on table "public"."movement_patterns" to "service_role";
-
-grant insert on table "public"."movement_patterns" to "service_role";
-
-grant references on table "public"."movement_patterns" to "service_role";
-
-grant select on table "public"."movement_patterns" to "service_role";
-
-grant trigger on table "public"."movement_patterns" to "service_role";
-
-grant truncate on table "public"."movement_patterns" to "service_role";
-
-grant update on table "public"."movement_patterns" to "service_role";
-
-grant delete on table "public"."muscle_groups" to "anon";
-
-grant insert on table "public"."muscle_groups" to "anon";
-
-grant references on table "public"."muscle_groups" to "anon";
-
-grant select on table "public"."muscle_groups" to "anon";
-
-grant trigger on table "public"."muscle_groups" to "anon";
-
-grant truncate on table "public"."muscle_groups" to "anon";
-
-grant update on table "public"."muscle_groups" to "anon";
-
-grant delete on table "public"."muscle_groups" to "authenticated";
-
-grant insert on table "public"."muscle_groups" to "authenticated";
-
-grant references on table "public"."muscle_groups" to "authenticated";
-
-grant select on table "public"."muscle_groups" to "authenticated";
-
-grant trigger on table "public"."muscle_groups" to "authenticated";
-
-grant truncate on table "public"."muscle_groups" to "authenticated";
-
-grant update on table "public"."muscle_groups" to "authenticated";
-
-grant delete on table "public"."muscle_groups" to "service_role";
-
-grant insert on table "public"."muscle_groups" to "service_role";
-
-grant references on table "public"."muscle_groups" to "service_role";
-
-grant select on table "public"."muscle_groups" to "service_role";
-
-grant trigger on table "public"."muscle_groups" to "service_role";
-
-grant truncate on table "public"."muscle_groups" to "service_role";
-
-grant update on table "public"."muscle_groups" to "service_role";
-
-grant delete on table "public"."plan_exercises" to "anon";
-
-grant insert on table "public"."plan_exercises" to "anon";
-
-grant references on table "public"."plan_exercises" to "anon";
-
-grant select on table "public"."plan_exercises" to "anon";
-
-grant trigger on table "public"."plan_exercises" to "anon";
-
-grant truncate on table "public"."plan_exercises" to "anon";
-
-grant update on table "public"."plan_exercises" to "anon";
-
-grant delete on table "public"."plan_exercises" to "authenticated";
-
-grant insert on table "public"."plan_exercises" to "authenticated";
-
-grant references on table "public"."plan_exercises" to "authenticated";
-
-grant select on table "public"."plan_exercises" to "authenticated";
-
-grant trigger on table "public"."plan_exercises" to "authenticated";
-
-grant truncate on table "public"."plan_exercises" to "authenticated";
-
-grant update on table "public"."plan_exercises" to "authenticated";
-
-grant delete on table "public"."plan_exercises" to "service_role";
-
-grant insert on table "public"."plan_exercises" to "service_role";
-
-grant references on table "public"."plan_exercises" to "service_role";
-
-grant select on table "public"."plan_exercises" to "service_role";
-
-grant trigger on table "public"."plan_exercises" to "service_role";
-
-grant truncate on table "public"."plan_exercises" to "service_role";
-
-grant update on table "public"."plan_exercises" to "service_role";
-
-grant delete on table "public"."plans" to "anon";
-
-grant insert on table "public"."plans" to "anon";
-
-grant references on table "public"."plans" to "anon";
-
-grant select on table "public"."plans" to "anon";
-
-grant trigger on table "public"."plans" to "anon";
-
-grant truncate on table "public"."plans" to "anon";
-
-grant update on table "public"."plans" to "anon";
-
-grant delete on table "public"."plans" to "authenticated";
-
-grant insert on table "public"."plans" to "authenticated";
-
-grant references on table "public"."plans" to "authenticated";
-
-grant select on table "public"."plans" to "authenticated";
-
-grant trigger on table "public"."plans" to "authenticated";
-
-grant truncate on table "public"."plans" to "authenticated";
-
-grant update on table "public"."plans" to "authenticated";
-
-grant delete on table "public"."plans" to "service_role";
-
-grant insert on table "public"."plans" to "service_role";
-
-grant references on table "public"."plans" to "service_role";
-
-grant select on table "public"."plans" to "service_role";
-
-grant trigger on table "public"."plans" to "service_role";
-
-grant truncate on table "public"."plans" to "service_role";
-
-grant update on table "public"."plans" to "service_role";
-
-grant delete on table "public"."profiles" to "anon";
-
-grant insert on table "public"."profiles" to "anon";
-
-grant references on table "public"."profiles" to "anon";
-
-grant select on table "public"."profiles" to "anon";
-
-grant trigger on table "public"."profiles" to "anon";
-
-grant truncate on table "public"."profiles" to "anon";
-
-grant update on table "public"."profiles" to "anon";
-
-grant delete on table "public"."profiles" to "authenticated";
-
-grant insert on table "public"."profiles" to "authenticated";
-
-grant references on table "public"."profiles" to "authenticated";
-
-grant select on table "public"."profiles" to "authenticated";
-
-grant trigger on table "public"."profiles" to "authenticated";
-
-grant truncate on table "public"."profiles" to "authenticated";
-
-grant update on table "public"."profiles" to "authenticated";
-
-grant delete on table "public"."profiles" to "service_role";
-
-grant insert on table "public"."profiles" to "service_role";
-
-grant references on table "public"."profiles" to "service_role";
-
-grant select on table "public"."profiles" to "service_role";
-
-grant trigger on table "public"."profiles" to "service_role";
-
-grant truncate on table "public"."profiles" to "service_role";
-
-grant update on table "public"."profiles" to "service_role";
-
-grant delete on table "public"."sets" to "anon";
-
-grant insert on table "public"."sets" to "anon";
-
-grant references on table "public"."sets" to "anon";
-
-grant select on table "public"."sets" to "anon";
-
-grant trigger on table "public"."sets" to "anon";
-
-grant truncate on table "public"."sets" to "anon";
-
-grant update on table "public"."sets" to "anon";
-
-grant delete on table "public"."sets" to "authenticated";
-
-grant insert on table "public"."sets" to "authenticated";
-
-grant references on table "public"."sets" to "authenticated";
-
-grant select on table "public"."sets" to "authenticated";
-
-grant trigger on table "public"."sets" to "authenticated";
-
-grant truncate on table "public"."sets" to "authenticated";
-
-grant update on table "public"."sets" to "authenticated";
-
-grant delete on table "public"."sets" to "service_role";
-
-grant insert on table "public"."sets" to "service_role";
-
-grant references on table "public"."sets" to "service_role";
-
-grant select on table "public"."sets" to "service_role";
-
-grant trigger on table "public"."sets" to "service_role";
-
-grant truncate on table "public"."sets" to "service_role";
-
-grant update on table "public"."sets" to "service_role";
-
-grant delete on table "public"."training_styles" to "anon";
-
-grant insert on table "public"."training_styles" to "anon";
-
-grant references on table "public"."training_styles" to "anon";
-
-grant select on table "public"."training_styles" to "anon";
-
-grant trigger on table "public"."training_styles" to "anon";
-
-grant truncate on table "public"."training_styles" to "anon";
-
-grant update on table "public"."training_styles" to "anon";
-
-grant delete on table "public"."training_styles" to "authenticated";
-
-grant insert on table "public"."training_styles" to "authenticated";
-
-grant references on table "public"."training_styles" to "authenticated";
-
-grant select on table "public"."training_styles" to "authenticated";
-
-grant trigger on table "public"."training_styles" to "authenticated";
-
-grant truncate on table "public"."training_styles" to "authenticated";
-
-grant update on table "public"."training_styles" to "authenticated";
-
-grant delete on table "public"."training_styles" to "service_role";
-
-grant insert on table "public"."training_styles" to "service_role";
-
-grant references on table "public"."training_styles" to "service_role";
-
-grant select on table "public"."training_styles" to "service_role";
-
-grant trigger on table "public"."training_styles" to "service_role";
-
-grant truncate on table "public"."training_styles" to "service_role";
-
-grant update on table "public"."training_styles" to "service_role";
-
-grant delete on table "public"."workout_sessions" to "anon";
-
-grant insert on table "public"."workout_sessions" to "anon";
-
-grant references on table "public"."workout_sessions" to "anon";
-
-grant select on table "public"."workout_sessions" to "anon";
-
-grant trigger on table "public"."workout_sessions" to "anon";
-
-grant truncate on table "public"."workout_sessions" to "anon";
-
-grant update on table "public"."workout_sessions" to "anon";
-
-grant delete on table "public"."workout_sessions" to "authenticated";
-
-grant insert on table "public"."workout_sessions" to "authenticated";
-
-grant references on table "public"."workout_sessions" to "authenticated";
-
-grant select on table "public"."workout_sessions" to "authenticated";
-
-grant trigger on table "public"."workout_sessions" to "authenticated";
-
-grant truncate on table "public"."workout_sessions" to "authenticated";
-
-grant update on table "public"."workout_sessions" to "authenticated";
-
-grant delete on table "public"."workout_sessions" to "service_role";
-
-grant insert on table "public"."workout_sessions" to "service_role";
-
-grant references on table "public"."workout_sessions" to "service_role";
-
-grant select on table "public"."workout_sessions" to "service_role";
-
-grant trigger on table "public"."workout_sessions" to "service_role";
-
-grant truncate on table "public"."workout_sessions" to "service_role";
-
-grant update on table "public"."workout_sessions" to "service_role";
-
-CREATE TRIGGER update_conversations_updated_at BEFORE UPDATE ON public.conversations FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_exercises_updated_at BEFORE UPDATE ON public.exercises FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_memories_updated_at BEFORE UPDATE ON public.memories FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_profiles_updated_at BEFORE UPDATE ON public.profiles FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_sets_updated_at BEFORE UPDATE ON public.sets FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_workout_sessions_updated_at BEFORE UPDATE ON public.workout_sessions FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-
+$$ LANGUAGE plpgsql;
+
+COMMENT ON FUNCTION public.update_updated_at_column() IS 'Trigger function to automatically update the updated_at timestamp when a row is modified';-- =============================================================================
+-- SHARED TRIGGERS
+-- =============================================================================
+-- Triggers that apply to multiple tables
+-- Centralized for easier maintenance and overview
+-- =============================================================================
+
+-- =============================================================================
+-- UPDATED_AT TRIGGERS
+-- =============================================================================
+-- Automatically update the updated_at timestamp when rows are modified
+
+CREATE TRIGGER update_profiles_updated_at 
+    BEFORE UPDATE ON public.profiles
+    FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+CREATE TRIGGER update_exercises_updated_at 
+    BEFORE UPDATE ON public.exercises
+    FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+CREATE TRIGGER update_workout_sessions_updated_at 
+    BEFORE UPDATE ON public.workout_sessions
+    FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+CREATE TRIGGER update_sets_updated_at 
+    BEFORE UPDATE ON public.sets
+    FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+CREATE TRIGGER update_conversations_updated_at 
+    BEFORE UPDATE ON public.conversations
+    FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+CREATE TRIGGER update_memories_updated_at 
+    BEFORE UPDATE ON public.memories
+    FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();

@@ -1,6 +1,6 @@
 """Comprehensive tests for the plans API endpoints.
 
-This module tests POST, GET list, and GET by ID for /api/v1/plans endpoints:
+This module tests POST, GET list, GET by ID, PUT, and DELETE for /api/v1/plans endpoints:
 
 POST /api/v1/plans (Plan Creation):
 - Successful plan creation with valid data
@@ -30,6 +30,17 @@ GET /api/v1/plans/{plan_id} (Plan By ID Retrieval):
 - Database error handling (500 errors)
 - Various UUID formats (uppercase, lowercase, with hyphens)
 - Complex metadata and unicode content preservation
+
+DELETE /api/v1/plans/{plan_id} (Plan Soft Deletion):
+- Successful soft deletion with deleted_at timestamp
+- Deletion of all plan versions (parent and children)
+- Authentication requirements (401/403 errors)
+- Authorization enforcement (403 for non-owners)
+- Not found handling (404 for non-existent or already deleted plans)
+- Business rule enforcement (400 for plans with active sessions)
+- UUID format validation (422 errors)
+- Database error handling (500 errors)
+- Idempotency and edge case handling
 """
 
 from unittest.mock import MagicMock
@@ -2399,3 +2410,1820 @@ def test_get_plan_by_id_unicode_content(
     assert response_data["goal"] == "fuerza general"
     assert response_data["metadata"]["notas"] == "тренировка на силу"
     assert response_data["metadata"]["idioma"] == "español"
+
+
+# ============================================================================
+# PUT PLAN (UPDATE) ENDPOINT TESTS - Creates New Versions
+# ============================================================================
+
+
+@pytest.fixture
+def mock_supabase_client_for_update():
+    """Mock Supabase client specifically configured for PUT plans/{plan_id} endpoint."""
+    from src.core.utils import get_supabase_client
+
+    # Create a single mock client instance with proper method chaining
+    mock_client = MagicMock()
+    mock_table = MagicMock()
+    mock_select = MagicMock()
+    mock_eq = MagicMock()
+    mock_update = MagicMock()
+    mock_insert = MagicMock()
+    mock_execute = MagicMock()
+
+    # Set up the method chain for select query: client.table().select().eq().execute()
+    mock_client.table.return_value = mock_table
+    mock_table.select.return_value = mock_select
+    mock_select.eq.return_value = mock_eq
+    mock_eq.execute.return_value = mock_execute
+
+    # Set up the method chain for update query: client.table().update().eq().execute()
+    mock_table.update.return_value = mock_update
+    mock_update.eq.return_value = mock_eq
+
+    # Set up the method chain for insert query: client.table().insert().execute()
+    mock_table.insert.return_value = mock_insert
+    mock_insert.execute.return_value = mock_execute
+
+    # Override the dependency to return the same instance
+    def mock_get_supabase_client():
+        return mock_client
+
+    app.dependency_overrides[get_supabase_client] = mock_get_supabase_client
+
+    yield mock_client
+
+    # Clean up the override after the test
+    if get_supabase_client in app.dependency_overrides:
+        del app.dependency_overrides[get_supabase_client]
+
+
+@pytest.fixture
+def existing_plan_v1(mock_user_id):
+    """Mock existing plan version 1 data."""
+    return {
+        "id": str(uuid4()),
+        "user_id": mock_user_id,
+        "name": "Original Plan",
+        "description": "Original description",
+        "training_style": None,
+        "goal": "strength",
+        "difficulty_level": "intermediate",
+        "duration_weeks": 8,
+        "days_per_week": 4,
+        "is_public": False,
+        "metadata": {"original": "metadata"},
+        "version_number": 1,
+        "parent_plan_id": None,
+        "is_active": True,
+        "created_at": "2025-01-01T12:00:00+00:00",
+    }
+
+
+@pytest.fixture
+def existing_plan_v2(mock_user_id, existing_plan_v1):
+    """Mock existing plan version 2 data."""
+    return {
+        "id": str(uuid4()),
+        "user_id": mock_user_id,
+        "name": "Updated Plan",
+        "description": "Updated description",
+        "training_style": None,
+        "goal": "hypertrophy",
+        "difficulty_level": "advanced",
+        "duration_weeks": 12,
+        "days_per_week": 5,
+        "is_public": True,
+        "metadata": {"updated": "metadata"},
+        "version_number": 2,
+        "parent_plan_id": existing_plan_v1["id"],
+        "is_active": True,
+        "created_at": "2025-01-02T12:00:00+00:00",
+    }
+
+
+@pytest.fixture
+def valid_update_data():
+    """Valid update data for testing."""
+    return {
+        "name": "Updated Plan Name",
+        "description": "Updated plan description",
+        "goal": "hypertrophy",
+        "difficulty_level": DifficultyLevel.ADVANCED.value,
+        "duration_weeks": 12,
+        "days_per_week": 5,
+        "is_public": True,
+        "metadata": {"updated": True, "notes": "New version"},
+    }
+
+
+# ============================================================================
+# SUCCESS TESTS - PUT PLAN
+# ============================================================================
+
+
+def test_update_plan_success_full_update(
+    mock_auth_dependency,
+    mock_supabase_client_for_update,
+    existing_plan_v1,
+    valid_update_data,
+    mock_user_id,
+):
+    """Test successful plan update creating new version with all fields updated."""
+    plan_id = existing_plan_v1["id"]
+
+    # Mock responses for the update workflow
+    # 1. Select query to get current plan
+    select_response = MagicMock()
+    select_response.data = [existing_plan_v1]
+
+    # 2. Update query to mark current version inactive
+    update_response = MagicMock()
+    update_response.data = [{"id": plan_id, "is_active": False}]
+
+    # 3. Insert query to create new version
+    new_version = {
+        **existing_plan_v1,
+        "id": str(uuid4()),
+        **valid_update_data,
+        "version_number": 2,
+        "parent_plan_id": plan_id,
+        "is_active": True,
+        "created_at": "2025-01-03T12:00:00+00:00",
+    }
+    insert_response = MagicMock()
+    insert_response.data = [new_version]
+
+    # Configure mock to return different responses based on call sequence
+    mock_supabase_client_for_update.table().select().eq().execute.return_value = (
+        select_response
+    )
+    mock_supabase_client_for_update.table().update().eq().execute.return_value = (
+        update_response
+    )
+    mock_supabase_client_for_update.table().insert().execute.return_value = (
+        insert_response
+    )
+
+    # Make the request
+    response = client.put(
+        f"/api/v1/plans/{plan_id}",
+        json=valid_update_data,
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    # Assert response
+    assert response.status_code == status.HTTP_200_OK
+    response_data = response.json()
+
+    # Verify the new version data
+    assert response_data["name"] == valid_update_data["name"]
+    assert response_data["description"] == valid_update_data["description"]
+    assert response_data["goal"] == valid_update_data["goal"]
+    assert response_data["difficulty_level"] == valid_update_data["difficulty_level"]
+    assert response_data["duration_weeks"] == valid_update_data["duration_weeks"]
+    assert response_data["days_per_week"] == valid_update_data["days_per_week"]
+    assert response_data["is_public"] == valid_update_data["is_public"]
+    assert response_data["metadata"] == valid_update_data["metadata"]
+
+    # Verify version management
+    assert response_data["version_number"] == 2
+    assert response_data["parent_plan_id"] == plan_id
+    assert response_data["is_active"] is True
+    assert response_data["user_id"] == mock_user_id
+
+    # Verify database calls
+    assert mock_supabase_client_for_update.table.called
+    # Should have called select, update, and insert
+    mock_supabase_client_for_update.table().select.assert_called()
+    mock_supabase_client_for_update.table().update.assert_called()
+    mock_supabase_client_for_update.table().insert.assert_called()
+
+
+def test_update_plan_success_partial_update(
+    mock_auth_dependency,
+    mock_supabase_client_for_update,
+    existing_plan_v1,
+    mock_user_id,
+):
+    """Test successful plan update with only some fields changed."""
+    plan_id = existing_plan_v1["id"]
+    partial_update = {
+        "name": "Partially Updated Plan",
+        "duration_weeks": 10,
+    }
+
+    # Mock responses
+    select_response = MagicMock()
+    select_response.data = [existing_plan_v1]
+
+    update_response = MagicMock()
+    update_response.data = [{"id": plan_id, "is_active": False}]
+
+    new_version = {
+        **existing_plan_v1,
+        "id": str(uuid4()),
+        **partial_update,
+        "version_number": 2,
+        "parent_plan_id": plan_id,
+        "is_active": True,
+        "created_at": "2025-01-03T12:00:00+00:00",
+    }
+    insert_response = MagicMock()
+    insert_response.data = [new_version]
+
+    mock_supabase_client_for_update.table().select().eq().execute.return_value = (
+        select_response
+    )
+    mock_supabase_client_for_update.table().update().eq().execute.return_value = (
+        update_response
+    )
+    mock_supabase_client_for_update.table().insert().execute.return_value = (
+        insert_response
+    )
+
+    # Make the request
+    response = client.put(
+        f"/api/v1/plans/{plan_id}",
+        json=partial_update,
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    # Assert response
+    assert response.status_code == status.HTTP_200_OK
+    response_data = response.json()
+
+    # Verify updated fields
+    assert response_data["name"] == partial_update["name"]
+    assert response_data["duration_weeks"] == partial_update["duration_weeks"]
+
+    # Verify unchanged fields are preserved
+    assert response_data["description"] == existing_plan_v1["description"]
+    assert response_data["goal"] == existing_plan_v1["goal"]
+    assert response_data["difficulty_level"] == existing_plan_v1["difficulty_level"]
+    assert response_data["days_per_week"] == existing_plan_v1["days_per_week"]
+    assert response_data["is_public"] == existing_plan_v1["is_public"]
+
+    # Verify version management
+    assert response_data["version_number"] == 2
+    assert response_data["parent_plan_id"] == plan_id
+    assert response_data["is_active"] is True
+
+
+def test_update_plan_success_is_active_flag_management(
+    mock_auth_dependency,
+    mock_supabase_client_for_update,
+    existing_plan_v1,
+):
+    """Test that is_active flags are managed correctly during update."""
+    plan_id = existing_plan_v1["id"]
+    update_data = {"name": "Flag Test Plan"}
+
+    # Mock responses
+    select_response = MagicMock()
+    select_response.data = [existing_plan_v1]
+
+    # Verify the current version is marked as inactive
+    update_response = MagicMock()
+    update_response.data = [{"id": plan_id, "is_active": False}]
+
+    new_version = {
+        **existing_plan_v1,
+        "id": str(uuid4()),
+        **update_data,
+        "version_number": 2,
+        "parent_plan_id": plan_id,
+        "is_active": True,
+        "created_at": "2025-01-03T12:00:00+00:00",
+    }
+    insert_response = MagicMock()
+    insert_response.data = [new_version]
+
+    mock_supabase_client_for_update.table().select().eq().execute.return_value = (
+        select_response
+    )
+    mock_supabase_client_for_update.table().update().eq().execute.return_value = (
+        update_response
+    )
+    mock_supabase_client_for_update.table().insert().execute.return_value = (
+        insert_response
+    )
+
+    # Make the request
+    response = client.put(
+        f"/api/v1/plans/{plan_id}",
+        json=update_data,
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    # Assert response
+    assert response.status_code == status.HTTP_200_OK
+    response_data = response.json()
+
+    # Verify the new version is active
+    assert response_data["is_active"] is True
+
+    # Verify database calls for is_active management
+    mock_supabase_client_for_update.table().update.assert_called_with(
+        {"is_active": False}
+    )
+
+
+def test_update_plan_success_parent_plan_id_tracking(
+    mock_auth_dependency,
+    mock_supabase_client_for_update,
+    existing_plan_v2,
+    mock_user_id,
+):
+    """Test that parent_plan_id tracks version history correctly."""
+    plan_id = existing_plan_v2["id"]
+    original_parent_id = existing_plan_v2["parent_plan_id"]
+    update_data = {"name": "Version History Test"}
+
+    # Mock responses
+    select_response = MagicMock()
+    select_response.data = [existing_plan_v2]
+
+    update_response = MagicMock()
+    update_response.data = [{"id": plan_id, "is_active": False}]
+
+    # New version should use the same parent_plan_id as v2 (not v2's ID)
+    new_version = {
+        **existing_plan_v2,
+        "id": str(uuid4()),
+        **update_data,
+        "version_number": 3,
+        "parent_plan_id": original_parent_id,  # Should maintain original parent
+        "is_active": True,
+        "created_at": "2025-01-03T12:00:00+00:00",
+    }
+    insert_response = MagicMock()
+    insert_response.data = [new_version]
+
+    mock_supabase_client_for_update.table().select().eq().execute.return_value = (
+        select_response
+    )
+    mock_supabase_client_for_update.table().update().eq().execute.return_value = (
+        update_response
+    )
+    mock_supabase_client_for_update.table().insert().execute.return_value = (
+        insert_response
+    )
+
+    # Make the request
+    response = client.put(
+        f"/api/v1/plans/{plan_id}",
+        json=update_data,
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    # Assert response
+    assert response.status_code == status.HTTP_200_OK
+    response_data = response.json()
+
+    # Verify version history tracking
+    assert response_data["version_number"] == 3
+    assert response_data["parent_plan_id"] == original_parent_id
+    assert response_data["is_active"] is True
+
+
+def test_update_plan_success_version_chain_from_v1(
+    mock_auth_dependency,
+    mock_supabase_client_for_update,
+    existing_plan_v1,
+):
+    """Test updating version 1 (original plan) creates proper version chain."""
+    plan_id = existing_plan_v1["id"]
+    update_data = {"name": "V1 to V2 Update"}
+
+    # Mock responses
+    select_response = MagicMock()
+    select_response.data = [existing_plan_v1]
+
+    update_response = MagicMock()
+    update_response.data = [{"id": plan_id, "is_active": False}]
+
+    # When updating v1, the parent_plan_id should be the v1's ID (becomes the root)
+    new_version = {
+        **existing_plan_v1,
+        "id": str(uuid4()),
+        **update_data,
+        "version_number": 2,
+        "parent_plan_id": plan_id,  # V1's ID becomes the parent
+        "is_active": True,
+        "created_at": "2025-01-03T12:00:00+00:00",
+    }
+    insert_response = MagicMock()
+    insert_response.data = [new_version]
+
+    mock_supabase_client_for_update.table().select().eq().execute.return_value = (
+        select_response
+    )
+    mock_supabase_client_for_update.table().update().eq().execute.return_value = (
+        update_response
+    )
+    mock_supabase_client_for_update.table().insert().execute.return_value = (
+        insert_response
+    )
+
+    # Make the request
+    response = client.put(
+        f"/api/v1/plans/{plan_id}",
+        json=update_data,
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    # Assert response
+    assert response.status_code == status.HTTP_200_OK
+    response_data = response.json()
+
+    # Verify version chain creation
+    assert response_data["version_number"] == 2
+    assert response_data["parent_plan_id"] == plan_id  # V1 becomes the parent
+    assert response_data["is_active"] is True
+
+
+# ============================================================================
+# ERROR TESTS - PUT PLAN
+# ============================================================================
+
+
+def test_update_plan_400_inactive_version(
+    mock_auth_dependency,
+    mock_supabase_client_for_update,
+    existing_plan_v1,
+):
+    """Test 400 error when trying to update an inactive version."""
+    plan_id = existing_plan_v1["id"]
+    inactive_plan = {**existing_plan_v1, "is_active": False}
+
+    # Mock response for inactive plan
+    select_response = MagicMock()
+    select_response.data = [inactive_plan]
+
+    mock_supabase_client_for_update.table().select().eq().execute.return_value = (
+        select_response
+    )
+
+    update_data = {"name": "Should Fail Update"}
+
+    # Make the request
+    response = client.put(
+        f"/api/v1/plans/{plan_id}",
+        json=update_data,
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    # Assert 400 response
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "inactive plan version" in response.json()["detail"]
+
+    # Verify no update or insert calls were made
+    mock_supabase_client_for_update.table().update.assert_not_called()
+    mock_supabase_client_for_update.table().insert.assert_not_called()
+
+
+def test_update_plan_400_no_changes(
+    mock_auth_dependency,
+    mock_supabase_client_for_update,
+):
+    """Test 400 error when no changes are provided."""
+    plan_id = str(uuid4())
+    empty_update: dict = {}
+
+    # Make the request with no changes
+    response = client.put(
+        f"/api/v1/plans/{plan_id}",
+        json=empty_update,
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    # Assert 400 response
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "No changes provided" in response.json()["detail"]
+
+    # Verify no database calls were made
+    mock_supabase_client_for_update.table().select.assert_not_called()
+
+
+def test_update_plan_403_non_owner(
+    mock_auth_dependency,
+    mock_supabase_client_for_update,
+    existing_plan_v1,
+):
+    """Test 403 error when non-owner tries to update plan."""
+    plan_id = existing_plan_v1["id"]
+    # Plan belongs to different user
+    other_user_plan = {**existing_plan_v1, "user_id": str(uuid4())}
+
+    # Mock response
+    select_response = MagicMock()
+    select_response.data = [other_user_plan]
+
+    mock_supabase_client_for_update.table().select().eq().execute.return_value = (
+        select_response
+    )
+
+    update_data = {"name": "Unauthorized Update"}
+
+    # Make the request
+    response = client.put(
+        f"/api/v1/plans/{plan_id}",
+        json=update_data,
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    # Assert 403 response
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+    assert "permission to update" in response.json()["detail"]
+
+    # Verify no update or insert calls were made
+    mock_supabase_client_for_update.table().update.assert_not_called()
+    mock_supabase_client_for_update.table().insert.assert_not_called()
+
+
+def test_update_plan_404_nonexistent_plan(
+    mock_auth_dependency,
+    mock_supabase_client_for_update,
+):
+    """Test 404 error for non-existent plan."""
+    nonexistent_plan_id = str(uuid4())
+
+    # Mock empty response
+    select_response = MagicMock()
+    select_response.data = []
+
+    mock_supabase_client_for_update.table().select().eq().execute.return_value = (
+        select_response
+    )
+
+    update_data = {"name": "Nonexistent Plan Update"}
+
+    # Make the request
+    response = client.put(
+        f"/api/v1/plans/{nonexistent_plan_id}",
+        json=update_data,
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    # Assert 404 response
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+    assert "Plan not found" in response.json()["detail"]
+
+    # Verify no update or insert calls were made
+    mock_supabase_client_for_update.table().update.assert_not_called()
+    mock_supabase_client_for_update.table().insert.assert_not_called()
+
+
+def test_update_plan_409_version_conflict(
+    mock_auth_dependency,
+    mock_supabase_client_for_update,
+    existing_plan_v1,
+):
+    """Test 409 error for version conflicts (duplicate key)."""
+    plan_id = existing_plan_v1["id"]
+
+    # Mock responses for successful select and update
+    select_response = MagicMock()
+    select_response.data = [existing_plan_v1]
+
+    update_response = MagicMock()
+    update_response.data = [{"id": plan_id, "is_active": False}]
+
+    mock_supabase_client_for_update.table().select().eq().execute.return_value = (
+        select_response
+    )
+    mock_supabase_client_for_update.table().update().eq().execute.return_value = (
+        update_response
+    )
+
+    # Mock insert to raise duplicate key error
+    mock_supabase_client_for_update.table().insert().execute.side_effect = Exception(
+        "duplicate key value violates unique constraint"
+    )
+
+    update_data = {"name": "Conflict Update"}
+
+    # Make the request
+    response = client.put(
+        f"/api/v1/plans/{plan_id}",
+        json=update_data,
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    # Assert 409 response
+    assert response.status_code == status.HTTP_409_CONFLICT
+    assert "newer version" in response.json()["detail"]
+
+
+def test_update_plan_422_validation_errors(
+    mock_auth_dependency,
+    mock_supabase_client_for_update,
+):
+    """Test 422 errors for validation errors."""
+    plan_id = str(uuid4())
+
+    # Test invalid name (empty string)
+    invalid_update = {"name": ""}
+
+    response = client.put(
+        f"/api/v1/plans/{plan_id}",
+        json=invalid_update,
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    error_detail = response.json()["detail"]
+    assert any("name" in str(error).lower() for error in error_detail)
+
+
+def test_update_plan_422_invalid_duration_weeks(
+    mock_auth_dependency,
+    mock_supabase_client_for_update,
+):
+    """Test 422 error for invalid duration_weeks."""
+    plan_id = str(uuid4())
+
+    # Test duration_weeks exceeding maximum
+    invalid_update = {"duration_weeks": 53}
+
+    response = client.put(
+        f"/api/v1/plans/{plan_id}",
+        json=invalid_update,
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    error_detail = response.json()["detail"]
+    assert any("duration_weeks" in str(error).lower() for error in error_detail)
+
+
+def test_update_plan_422_invalid_days_per_week(
+    mock_auth_dependency,
+    mock_supabase_client_for_update,
+):
+    """Test 422 error for invalid days_per_week."""
+    plan_id = str(uuid4())
+
+    # Test days_per_week exceeding maximum
+    invalid_update = {"days_per_week": 8}
+
+    response = client.put(
+        f"/api/v1/plans/{plan_id}",
+        json=invalid_update,
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    error_detail = response.json()["detail"]
+    assert any("days_per_week" in str(error).lower() for error in error_detail)
+
+
+# ============================================================================
+# AUTHENTICATION TESTS - PUT PLAN
+# ============================================================================
+
+
+def test_update_plan_unauthenticated():
+    """Test plan update without authentication token."""
+    plan_id = str(uuid4())
+    update_data = {"name": "Unauthorized Update"}
+
+    response = client.put(f"/api/v1/plans/{plan_id}", json=update_data)
+
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_update_plan_invalid_token():
+    """Test plan update with invalid authentication token."""
+    plan_id = str(uuid4())
+    update_data = {"name": "Invalid Token Update"}
+
+    response = client.put(
+        f"/api/v1/plans/{plan_id}",
+        json=update_data,
+        headers={"Authorization": "Bearer invalid-token"},
+    )
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+# ============================================================================
+# DATABASE ERROR TESTS - PUT PLAN
+# ============================================================================
+
+
+def test_update_plan_database_error_on_select(
+    mock_auth_dependency,
+    mock_supabase_client_for_update,
+):
+    """Test 500 error when database fails during plan selection."""
+    plan_id = str(uuid4())
+
+    # Mock database error on select
+    mock_supabase_client_for_update.table().select().eq().execute.side_effect = (
+        Exception("Database connection timeout")
+    )
+
+    update_data = {"name": "DB Error Test"}
+
+    response = client.put(
+        f"/api/v1/plans/{plan_id}",
+        json=update_data,
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+    assert "internal error" in response.json()["detail"].lower()
+
+
+def test_update_plan_database_error_on_update(
+    mock_auth_dependency,
+    mock_supabase_client_for_update,
+    existing_plan_v1,
+):
+    """Test handling when update operation fails."""
+    plan_id = existing_plan_v1["id"]
+
+    # Mock successful select but failed update
+    select_response = MagicMock()
+    select_response.data = [existing_plan_v1]
+
+    mock_supabase_client_for_update.table().select().eq().execute.return_value = (
+        select_response
+    )
+    mock_supabase_client_for_update.table().update().eq().execute.return_value = (
+        MagicMock(data=None)
+    )
+
+    update_data = {"name": "Update Fail Test"}
+
+    response = client.put(
+        f"/api/v1/plans/{plan_id}",
+        json=update_data,
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+    assert "Failed to update current plan version" in response.json()["detail"]
+
+
+def test_update_plan_database_error_on_insert_with_rollback(
+    mock_auth_dependency,
+    mock_supabase_client_for_update,
+    existing_plan_v1,
+):
+    """Test rollback behavior when insert fails."""
+    plan_id = existing_plan_v1["id"]
+
+    # Mock successful select and update
+    select_response = MagicMock()
+    select_response.data = [existing_plan_v1]
+
+    update_response = MagicMock()
+    update_response.data = [{"id": plan_id, "is_active": False}]
+
+    mock_supabase_client_for_update.table().select().eq().execute.return_value = (
+        select_response
+    )
+    mock_supabase_client_for_update.table().update().eq().execute.return_value = (
+        update_response
+    )
+
+    # Mock failed insert
+    insert_response = MagicMock()
+    insert_response.data = []
+    mock_supabase_client_for_update.table().insert().execute.return_value = (
+        insert_response
+    )
+
+    update_data = {"name": "Insert Fail Test"}
+
+    response = client.put(
+        f"/api/v1/plans/{plan_id}",
+        json=update_data,
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+    assert "Failed to create new plan version" in response.json()["detail"]
+
+    # Verify rollback update was called (should be called twice: once to deactivate, once to rollback)
+    assert mock_supabase_client_for_update.table().update.call_count >= 2
+
+
+def test_update_plan_value_error_handling(
+    mock_auth_dependency,
+    mock_supabase_client_for_update,
+):
+    """Test 422 error for ValueError during processing."""
+    plan_id = str(uuid4())
+
+    # Mock ValueError during database operation
+    mock_supabase_client_for_update.table().select().eq().execute.side_effect = (
+        ValueError("Invalid data format encountered")
+    )
+
+    update_data = {"name": "Value Error Test"}
+
+    response = client.put(
+        f"/api/v1/plans/{plan_id}",
+        json=update_data,
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    assert "Invalid data format encountered" in response.json()["detail"]
+
+
+# ============================================================================
+# EDGE CASES AND BOUNDARY TESTS - PUT PLAN
+# ============================================================================
+
+
+def test_update_plan_boundary_values(
+    mock_auth_dependency,
+    mock_supabase_client_for_update,
+    existing_plan_v1,
+):
+    """Test plan update with boundary values."""
+    plan_id = existing_plan_v1["id"]
+    boundary_update = {
+        "name": "x",  # Minimum length
+        "duration_weeks": 1,  # Minimum value
+        "days_per_week": 1,  # Minimum value
+    }
+
+    # Mock responses
+    select_response = MagicMock()
+    select_response.data = [existing_plan_v1]
+
+    update_response = MagicMock()
+    update_response.data = [{"id": plan_id, "is_active": False}]
+
+    new_version = {
+        **existing_plan_v1,
+        "id": str(uuid4()),
+        **boundary_update,
+        "version_number": 2,
+        "parent_plan_id": plan_id,
+        "is_active": True,
+        "created_at": "2025-01-03T12:00:00+00:00",
+    }
+    insert_response = MagicMock()
+    insert_response.data = [new_version]
+
+    mock_supabase_client_for_update.table().select().eq().execute.return_value = (
+        select_response
+    )
+    mock_supabase_client_for_update.table().update().eq().execute.return_value = (
+        update_response
+    )
+    mock_supabase_client_for_update.table().insert().execute.return_value = (
+        insert_response
+    )
+
+    response = client.put(
+        f"/api/v1/plans/{plan_id}",
+        json=boundary_update,
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    response_data = response.json()
+    assert response_data["name"] == "x"
+    assert response_data["duration_weeks"] == 1
+    assert response_data["days_per_week"] == 1
+
+
+def test_update_plan_maximum_boundary_values(
+    mock_auth_dependency,
+    mock_supabase_client_for_update,
+    existing_plan_v1,
+):
+    """Test plan update with maximum boundary values."""
+    plan_id = existing_plan_v1["id"]
+    max_boundary_update = {
+        "name": "x" * 100,  # Maximum length
+        "description": "x" * 2000,  # Maximum length
+        "goal": "x" * 200,  # Maximum length
+        "duration_weeks": 52,  # Maximum value
+        "days_per_week": 7,  # Maximum value
+    }
+
+    # Mock responses
+    select_response = MagicMock()
+    select_response.data = [existing_plan_v1]
+
+    update_response = MagicMock()
+    update_response.data = [{"id": plan_id, "is_active": False}]
+
+    new_version = {
+        **existing_plan_v1,
+        "id": str(uuid4()),
+        **max_boundary_update,
+        "version_number": 2,
+        "parent_plan_id": plan_id,
+        "is_active": True,
+        "created_at": "2025-01-03T12:00:00+00:00",
+    }
+    insert_response = MagicMock()
+    insert_response.data = [new_version]
+
+    mock_supabase_client_for_update.table().select().eq().execute.return_value = (
+        select_response
+    )
+    mock_supabase_client_for_update.table().update().eq().execute.return_value = (
+        update_response
+    )
+    mock_supabase_client_for_update.table().insert().execute.return_value = (
+        insert_response
+    )
+
+    response = client.put(
+        f"/api/v1/plans/{plan_id}",
+        json=max_boundary_update,
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    response_data = response.json()
+    assert len(response_data["name"]) == 100
+    assert len(response_data["description"]) == 2000
+    assert len(response_data["goal"]) == 200
+    assert response_data["duration_weeks"] == 52
+    assert response_data["days_per_week"] == 7
+
+
+def test_update_plan_unicode_content(
+    mock_auth_dependency,
+    mock_supabase_client_for_update,
+    existing_plan_v1,
+):
+    """Test plan update with unicode characters."""
+    plan_id = existing_plan_v1["id"]
+    unicode_update = {
+        "name": "강화 운동 💪 Updated",
+        "description": "Descripción actualizada: 体力 训练 🏋️‍♂️",
+        "goal": "fuerza mejorada",
+        "metadata": {"notas": "обновленная тренировка"},
+    }
+
+    # Mock responses
+    select_response = MagicMock()
+    select_response.data = [existing_plan_v1]
+
+    update_response = MagicMock()
+    update_response.data = [{"id": plan_id, "is_active": False}]
+
+    new_version = {
+        **existing_plan_v1,
+        "id": str(uuid4()),
+        **unicode_update,
+        "version_number": 2,
+        "parent_plan_id": plan_id,
+        "is_active": True,
+        "created_at": "2025-01-03T12:00:00+00:00",
+    }
+    insert_response = MagicMock()
+    insert_response.data = [new_version]
+
+    mock_supabase_client_for_update.table().select().eq().execute.return_value = (
+        select_response
+    )
+    mock_supabase_client_for_update.table().update().eq().execute.return_value = (
+        update_response
+    )
+    mock_supabase_client_for_update.table().insert().execute.return_value = (
+        insert_response
+    )
+
+    response = client.put(
+        f"/api/v1/plans/{plan_id}",
+        json=unicode_update,
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    response_data = response.json()
+    assert response_data["name"] == unicode_update["name"]
+    assert response_data["description"] == unicode_update["description"]
+    assert response_data["goal"] == unicode_update["goal"]
+    assert response_data["metadata"]["notas"] == "обновленная тренировка"
+
+
+def test_update_plan_complex_metadata(
+    mock_auth_dependency,
+    mock_supabase_client_for_update,
+    existing_plan_v1,
+):
+    """Test plan update with complex metadata structure."""
+    plan_id = existing_plan_v1["id"]
+    complex_metadata = {
+        "periodization": {
+            "type": "block",
+            "phases": [
+                {"week": 1, "focus": "volume", "intensity": 70},
+                {"week": 2, "focus": "intensity", "intensity": 85},
+            ],
+        },
+        "deload_weeks": [4, 8, 12],
+        "exercise_variations": {
+            "squat": ["back_squat", "front_squat"],
+            "bench": ["comp_bench", "close_grip"],
+        },
+    }
+    metadata_update = {"metadata": complex_metadata}
+
+    # Mock responses
+    select_response = MagicMock()
+    select_response.data = [existing_plan_v1]
+
+    update_response = MagicMock()
+    update_response.data = [{"id": plan_id, "is_active": False}]
+
+    new_version = {
+        **existing_plan_v1,
+        "id": str(uuid4()),
+        **metadata_update,
+        "version_number": 2,
+        "parent_plan_id": plan_id,
+        "is_active": True,
+        "created_at": "2025-01-03T12:00:00+00:00",
+    }
+    insert_response = MagicMock()
+    insert_response.data = [new_version]
+
+    mock_supabase_client_for_update.table().select().eq().execute.return_value = (
+        select_response
+    )
+    mock_supabase_client_for_update.table().update().eq().execute.return_value = (
+        update_response
+    )
+    mock_supabase_client_for_update.table().insert().execute.return_value = (
+        insert_response
+    )
+
+    response = client.put(
+        f"/api/v1/plans/{plan_id}",
+        json=metadata_update,
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    response_data = response.json()
+    assert response_data["metadata"] == complex_metadata
+    assert "periodization" in response_data["metadata"]
+    assert response_data["metadata"]["periodization"]["type"] == "block"
+    assert len(response_data["metadata"]["deload_weeks"]) == 3
+
+
+def test_update_plan_invalid_uuid_format():
+    """Test 422 error for invalid UUID format in path parameter."""
+    invalid_uuid = "not-a-valid-uuid"
+    update_data = {"name": "UUID Test"}
+
+    response = client.put(
+        f"/api/v1/plans/{invalid_uuid}",
+        json=update_data,
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    error_detail = response.json()["detail"]
+    assert any("uuid" in str(error).lower() for error in error_detail)
+
+
+# ============================================================================
+# DELETE /api/v1/plans/{plan_id} ENDPOINT TESTS
+# ============================================================================
+
+
+@pytest.fixture
+def mock_supabase_client_for_delete():
+    """Mock Supabase client specifically for DELETE endpoint testing."""
+    from src.core.utils import get_supabase_client
+
+    mock_client = MagicMock()
+    mock_table = MagicMock()
+    mock_select = MagicMock()
+    mock_eq = MagicMock()
+    mock_update = MagicMock()
+    mock_or = MagicMock()
+    mock_is = MagicMock()
+    mock_execute = MagicMock()
+
+    # Set up the method chains for different operations
+    mock_client.table.return_value = mock_table
+    mock_table.select.return_value = mock_select
+    mock_table.update.return_value = mock_update
+    mock_select.eq.return_value = mock_eq
+    mock_update.eq.return_value = mock_eq
+    mock_update.or_.return_value = mock_or
+    mock_eq.execute.return_value = mock_execute
+    mock_or.execute.return_value = mock_execute
+    mock_eq.is_.return_value = mock_is
+    mock_is.execute.return_value = mock_execute
+
+    def mock_get_supabase_client():
+        return mock_client
+
+    app.dependency_overrides[get_supabase_client] = mock_get_supabase_client
+    yield mock_client
+
+    if get_supabase_client in app.dependency_overrides:
+        del app.dependency_overrides[get_supabase_client]
+
+
+@pytest.fixture
+def existing_plan_for_delete(mock_user_id):
+    """Mock plan data for delete testing."""
+    plan_id = str(uuid4())
+    return {
+        "id": plan_id,
+        "user_id": mock_user_id,
+        "name": "Test Plan for Deletion",
+        "description": "A plan that will be deleted",
+        "training_style": TrainingStyle.POWERBUILDING.value,
+        "goal": "strength",
+        "difficulty_level": DifficultyLevel.INTERMEDIATE.value,
+        "duration_weeks": 8,
+        "days_per_week": 4,
+        "is_public": False,
+        "version_number": 1,
+        "parent_plan_id": None,
+        "is_active": True,
+        "deleted_at": None,
+        "created_at": "2025-01-01T12:00:00+00:00",
+        "updated_at": "2025-01-01T12:00:00+00:00",
+        "metadata": {"periodization": "linear"},
+    }
+
+
+# ============================================================================
+# SUCCESS TESTS
+# ============================================================================
+
+
+def test_delete_plan_success(
+    mock_auth_dependency,
+    mock_supabase_client_for_delete,
+    existing_plan_for_delete,
+):
+    """Test successful soft deletion of a plan."""
+    plan_id = existing_plan_for_delete["id"]
+
+    # Mock responses
+    select_response = MagicMock()
+    select_response.data = [existing_plan_for_delete]
+
+    # Mock no active workout sessions
+    sessions_response = MagicMock()
+    sessions_response.count = 0
+
+    # Mock successful soft delete
+    delete_response = MagicMock()
+    delete_response.data = [{"id": plan_id, "deleted_at": "2025-01-03T12:00:00+00:00"}]
+
+    # Configure the mock call chain
+    mock_supabase_client_for_delete.table().select().eq().execute.return_value = (
+        select_response
+    )
+    mock_supabase_client_for_delete.table().select().eq().is_().execute.return_value = (
+        sessions_response
+    )
+    mock_supabase_client_for_delete.table().update().or_().execute.return_value = (
+        delete_response
+    )
+
+    response = client.delete(
+        f"/api/v1/plans/{plan_id}",
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    assert response.status_code == status.HTTP_204_NO_CONTENT
+    assert response.content == b""
+
+    # Verify the calls were made correctly
+    mock_supabase_client_for_delete.table.assert_called()
+    assert mock_supabase_client_for_delete.table().select().eq().execute.called
+    assert mock_supabase_client_for_delete.table().update().or_().execute.called
+
+
+def test_delete_plan_with_versions_success(
+    mock_auth_dependency,
+    mock_supabase_client_for_delete,
+    existing_plan_for_delete,
+):
+    """Test successful deletion of plan with multiple versions (all versions deleted)."""
+    plan_id = existing_plan_for_delete["id"]
+    parent_id = str(uuid4())
+
+    # Modify the plan to have a parent (it's a child version)
+    plan_with_parent = {
+        **existing_plan_for_delete,
+        "parent_plan_id": parent_id,
+        "version_number": 2,
+    }
+
+    # Mock responses
+    select_response = MagicMock()
+    select_response.data = [plan_with_parent]
+
+    # Mock no active workout sessions
+    sessions_response = MagicMock()
+    sessions_response.count = 0
+
+    # Mock successful deletion of all versions
+    delete_response = MagicMock()
+    delete_response.data = [
+        {"id": plan_id, "deleted_at": "2025-01-03T12:00:00+00:00"},
+        {"id": parent_id, "deleted_at": "2025-01-03T12:00:00+00:00"},
+    ]
+
+    # Configure the mock call chain
+    mock_supabase_client_for_delete.table().select().eq().execute.return_value = (
+        select_response
+    )
+    mock_supabase_client_for_delete.table().select().eq().is_().execute.return_value = (
+        sessions_response
+    )
+    mock_supabase_client_for_delete.table().update().or_().execute.return_value = (
+        delete_response
+    )
+
+    response = client.delete(
+        f"/api/v1/plans/{plan_id}",
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    assert response.status_code == status.HTTP_204_NO_CONTENT
+
+    # Verify all versions are deleted using the parent_id
+    mock_supabase_client_for_delete.table().update().or_.assert_called_with(
+        f"id.eq.{plan_id},parent_plan_id.eq.{parent_id}"
+    )
+
+
+def test_delete_plan_idempotency(
+    mock_auth_dependency,
+    mock_supabase_client_for_delete,
+    existing_plan_for_delete,
+):
+    """Test idempotency - deleting already deleted plan returns 404."""
+    plan_id = existing_plan_for_delete["id"]
+
+    # Plan is already deleted
+    deleted_plan = {
+        **existing_plan_for_delete,
+        "deleted_at": "2025-01-02T10:00:00+00:00",
+    }
+
+    # Mock responses
+    select_response = MagicMock()
+    select_response.data = [deleted_plan]
+
+    mock_supabase_client_for_delete.table().select().eq().execute.return_value = (
+        select_response
+    )
+
+    response = client.delete(
+        f"/api/v1/plans/{plan_id}",
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+    assert response.json()["detail"] == "Plan not found"
+
+    # Verify no delete operation was attempted
+    assert not mock_supabase_client_for_delete.table().update().or_().execute.called
+
+
+# ============================================================================
+# AUTHENTICATION TESTS
+# ============================================================================
+
+
+def test_delete_plan_unauthenticated():
+    """Test 403 error when no authentication token is provided."""
+    plan_id = str(uuid4())
+
+    response = client.delete(f"/api/v1/plans/{plan_id}")
+
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+    assert response.json()["detail"] == "Not authenticated"
+
+
+def test_delete_plan_invalid_token():
+    """Test 401 error when invalid authentication token is provided."""
+    plan_id = str(uuid4())
+
+    response = client.delete(
+        f"/api/v1/plans/{plan_id}",
+        headers={"Authorization": "Bearer invalid-token"},
+    )
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+def test_delete_plan_malformed_auth_header():
+    """Test 403 error when authorization header is malformed."""
+    plan_id = str(uuid4())
+
+    response = client.delete(
+        f"/api/v1/plans/{plan_id}",
+        headers={"Authorization": "malformed-header"},
+    )
+
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+# ============================================================================
+# AUTHORIZATION TESTS (403)
+# ============================================================================
+
+
+def test_delete_plan_not_owner(
+    mock_auth_dependency,
+    mock_supabase_client_for_delete,
+    existing_plan_for_delete,
+):
+    """Test 403 error when user tries to delete plan they don't own."""
+    plan_id = existing_plan_for_delete["id"]
+    different_user_id = str(uuid4())
+
+    # Plan belongs to different user
+    other_user_plan = {
+        **existing_plan_for_delete,
+        "user_id": different_user_id,
+    }
+
+    # Mock responses
+    select_response = MagicMock()
+    select_response.data = [other_user_plan]
+
+    mock_supabase_client_for_delete.table().select().eq().execute.return_value = (
+        select_response
+    )
+
+    response = client.delete(
+        f"/api/v1/plans/{plan_id}",
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+    assert response.json()["detail"] == "You do not have permission to delete this plan"
+
+    # Verify no deletion was attempted
+    assert not mock_supabase_client_for_delete.table().update().or_().execute.called
+
+
+# ============================================================================
+# NOT FOUND TESTS (404)
+# ============================================================================
+
+
+def test_delete_plan_not_found(
+    mock_auth_dependency,
+    mock_supabase_client_for_delete,
+):
+    """Test 404 error when plan doesn't exist."""
+    plan_id = str(uuid4())
+
+    # Mock empty response (plan not found)
+    select_response = MagicMock()
+    select_response.data = []
+
+    mock_supabase_client_for_delete.table().select().eq().execute.return_value = (
+        select_response
+    )
+
+    response = client.delete(
+        f"/api/v1/plans/{plan_id}",
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+    assert response.json()["detail"] == "Plan not found"
+
+
+def test_delete_plan_already_deleted(
+    mock_auth_dependency,
+    mock_supabase_client_for_delete,
+    existing_plan_for_delete,
+):
+    """Test 404 error when plan is already deleted."""
+    plan_id = existing_plan_for_delete["id"]
+
+    # Plan has deleted_at timestamp
+    deleted_plan = {
+        **existing_plan_for_delete,
+        "deleted_at": "2025-01-02T10:00:00+00:00",
+    }
+
+    # Mock responses
+    select_response = MagicMock()
+    select_response.data = [deleted_plan]
+
+    mock_supabase_client_for_delete.table().select().eq().execute.return_value = (
+        select_response
+    )
+
+    response = client.delete(
+        f"/api/v1/plans/{plan_id}",
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+    assert response.json()["detail"] == "Plan not found"
+
+
+# ============================================================================
+# BAD REQUEST TESTS (400)
+# ============================================================================
+
+
+def test_delete_plan_with_active_sessions(
+    mock_auth_dependency,
+    mock_supabase_client_for_delete,
+    existing_plan_for_delete,
+):
+    """Test 400 error when plan has active workout sessions."""
+    plan_id = existing_plan_for_delete["id"]
+
+    # Mock responses
+    select_response = MagicMock()
+    select_response.data = [existing_plan_for_delete]
+
+    # Mock active workout sessions exist
+    sessions_response = MagicMock()
+    sessions_response.count = 2  # 2 active sessions
+
+    mock_supabase_client_for_delete.table().select().eq().execute.return_value = (
+        select_response
+    )
+    mock_supabase_client_for_delete.table().select().eq().is_().execute.return_value = (
+        sessions_response
+    )
+
+    response = client.delete(
+        f"/api/v1/plans/{plan_id}",
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert (
+        response.json()["detail"]
+        == "Cannot delete plan - it has active workout sessions"
+    )
+
+    # Verify no deletion was attempted
+    assert not mock_supabase_client_for_delete.table().update().or_().execute.called
+
+
+def test_delete_plan_with_completed_sessions_allowed(
+    mock_auth_dependency,
+    mock_supabase_client_for_delete,
+    existing_plan_for_delete,
+):
+    """Test successful deletion when plan has only completed workout sessions."""
+    plan_id = existing_plan_for_delete["id"]
+
+    # Mock responses
+    select_response = MagicMock()
+    select_response.data = [existing_plan_for_delete]
+
+    # Mock no active sessions (completed sessions don't block deletion)
+    sessions_response = MagicMock()
+    sessions_response.count = 0
+
+    # Mock successful deletion
+    delete_response = MagicMock()
+    delete_response.data = [{"id": plan_id, "deleted_at": "2025-01-03T12:00:00+00:00"}]
+
+    mock_supabase_client_for_delete.table().select().eq().execute.return_value = (
+        select_response
+    )
+    mock_supabase_client_for_delete.table().select().eq().is_().execute.return_value = (
+        sessions_response
+    )
+    mock_supabase_client_for_delete.table().update().or_().execute.return_value = (
+        delete_response
+    )
+
+    response = client.delete(
+        f"/api/v1/plans/{plan_id}",
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    assert response.status_code == status.HTTP_204_NO_CONTENT
+
+
+# ============================================================================
+# VALIDATION ERROR TESTS (422)
+# ============================================================================
+
+
+def test_delete_plan_invalid_uuid_format(mock_auth_dependency):
+    """Test 422 error for invalid UUID format in path parameter."""
+    invalid_uuid = "not-a-valid-uuid"
+
+    response = client.delete(
+        f"/api/v1/plans/{invalid_uuid}",
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    error_detail = response.json()["detail"]
+    assert any("uuid" in str(error).lower() for error in error_detail)
+
+
+def test_delete_plan_empty_uuid():
+    """Test 422 error for empty UUID in path parameter."""
+    response = client.delete(
+        "/api/v1/plans/",
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    # This should return 404 (method not found) or 405 (method not allowed)
+    # as the route doesn't match without the UUID parameter
+    assert response.status_code in [
+        status.HTTP_404_NOT_FOUND,
+        status.HTTP_405_METHOD_NOT_ALLOWED,
+    ]
+
+
+# ============================================================================
+# DATABASE ERROR TESTS (500)
+# ============================================================================
+
+
+def test_delete_plan_database_connection_error(
+    mock_auth_dependency,
+    mock_supabase_client_for_delete,
+):
+    """Test 500 error when database connection fails during plan lookup."""
+    plan_id = str(uuid4())
+
+    # Mock database connection error
+    mock_supabase_client_for_delete.table().select().eq().execute.side_effect = (
+        Exception("Database connection failed")
+    )
+
+    response = client.delete(
+        f"/api/v1/plans/{plan_id}",
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+    assert "Failed to delete plan due to an internal error" in response.json()["detail"]
+
+
+def test_delete_plan_sessions_query_error(
+    mock_auth_dependency,
+    mock_supabase_client_for_delete,
+    existing_plan_for_delete,
+):
+    """Test 500 error when sessions query fails."""
+    plan_id = existing_plan_for_delete["id"]
+
+    # Mock successful plan lookup
+    select_response = MagicMock()
+    select_response.data = [existing_plan_for_delete]
+
+    # Mock sessions query failure
+    call_count = [0]  # Use list to maintain state across calls
+
+    def side_effect(*args, **kwargs):
+        # First call succeeds (plan lookup), second call fails (sessions query)
+        call_count[0] += 1
+        if call_count[0] == 1:
+            return select_response
+        else:
+            raise Exception("Sessions query failed")
+
+    mock_supabase_client_for_delete.table().select().eq().execute.side_effect = (
+        side_effect
+    )
+
+    response = client.delete(
+        f"/api/v1/plans/{plan_id}",
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+    assert "Failed to delete plan due to an internal error" in response.json()["detail"]
+
+
+def test_delete_plan_update_operation_failure(
+    mock_auth_dependency,
+    mock_supabase_client_for_delete,
+    existing_plan_for_delete,
+):
+    """Test 500 error when update operation returns no data."""
+    plan_id = existing_plan_for_delete["id"]
+
+    # Mock responses
+    select_response = MagicMock()
+    select_response.data = [existing_plan_for_delete]
+
+    sessions_response = MagicMock()
+    sessions_response.count = 0
+
+    # Mock failed deletion (no data returned)
+    delete_response = MagicMock()
+    delete_response.data = None
+
+    mock_supabase_client_for_delete.table().select().eq().execute.return_value = (
+        select_response
+    )
+    mock_supabase_client_for_delete.table().select().eq().is_().execute.return_value = (
+        sessions_response
+    )
+    mock_supabase_client_for_delete.table().update().or_().execute.return_value = (
+        delete_response
+    )
+
+    response = client.delete(
+        f"/api/v1/plans/{plan_id}",
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+    assert response.json()["detail"] == "Failed to delete plan"
+
+
+def test_delete_plan_update_operation_exception(
+    mock_auth_dependency,
+    mock_supabase_client_for_delete,
+    existing_plan_for_delete,
+):
+    """Test 500 error when update operation throws exception."""
+    plan_id = existing_plan_for_delete["id"]
+
+    # Mock responses
+    select_response = MagicMock()
+    select_response.data = [existing_plan_for_delete]
+
+    sessions_response = MagicMock()
+    sessions_response.count = 0
+
+    mock_supabase_client_for_delete.table().select().eq().execute.return_value = (
+        select_response
+    )
+    mock_supabase_client_for_delete.table().select().eq().is_().execute.return_value = (
+        sessions_response
+    )
+    # Mock update operation failure
+    mock_supabase_client_for_delete.table().update().or_().execute.side_effect = (
+        Exception("Update operation failed")
+    )
+
+    response = client.delete(
+        f"/api/v1/plans/{plan_id}",
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+    assert "Failed to delete plan due to an internal error" in response.json()["detail"]
+
+
+# ============================================================================
+# EDGE CASES AND BOUNDARY TESTS
+# ============================================================================
+
+
+def test_delete_plan_various_uuid_formats(
+    mock_auth_dependency,
+    mock_supabase_client_for_delete,
+    existing_plan_for_delete,
+):
+    """Test deletion with various valid UUID formats."""
+    from uuid import UUID
+
+    base_uuid = UUID(existing_plan_for_delete["id"])
+    uuid_formats = [
+        str(base_uuid).upper(),  # Uppercase
+        str(base_uuid).lower(),  # Lowercase
+        str(base_uuid),  # Default format with hyphens
+    ]
+
+    for uuid_format in uuid_formats:
+        # Update the plan ID to match the current format
+        plan_with_format = {
+            **existing_plan_for_delete,
+            "id": uuid_format,
+        }
+
+        # Mock responses
+        select_response = MagicMock()
+        select_response.data = [plan_with_format]
+
+        sessions_response = MagicMock()
+        sessions_response.count = 0
+
+        delete_response = MagicMock()
+        delete_response.data = [
+            {"id": uuid_format, "deleted_at": "2025-01-03T12:00:00+00:00"}
+        ]
+
+        mock_supabase_client_for_delete.table().select().eq().execute.return_value = (
+            select_response
+        )
+        mock_supabase_client_for_delete.table().select().eq().is_().execute.return_value = sessions_response
+        mock_supabase_client_for_delete.table().update().or_().execute.return_value = (
+            delete_response
+        )
+
+        response = client.delete(
+            f"/api/v1/plans/{uuid_format}",
+            headers={"Authorization": "Bearer mock-token"},
+        )
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+
+
+def test_delete_plan_parent_without_children(
+    mock_auth_dependency,
+    mock_supabase_client_for_delete,
+    existing_plan_for_delete,
+):
+    """Test deletion of parent plan that has no child versions."""
+    plan_id = existing_plan_for_delete["id"]
+
+    # This is a parent plan (no parent_plan_id)
+    parent_plan = {
+        **existing_plan_for_delete,
+        "parent_plan_id": None,
+        "version_number": 1,
+    }
+
+    # Mock responses
+    select_response = MagicMock()
+    select_response.data = [parent_plan]
+
+    sessions_response = MagicMock()
+    sessions_response.count = 0
+
+    delete_response = MagicMock()
+    delete_response.data = [{"id": plan_id, "deleted_at": "2025-01-03T12:00:00+00:00"}]
+
+    mock_supabase_client_for_delete.table().select().eq().execute.return_value = (
+        select_response
+    )
+    mock_supabase_client_for_delete.table().select().eq().is_().execute.return_value = (
+        sessions_response
+    )
+    mock_supabase_client_for_delete.table().update().or_().execute.return_value = (
+        delete_response
+    )
+
+    response = client.delete(
+        f"/api/v1/plans/{plan_id}",
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    assert response.status_code == status.HTTP_204_NO_CONTENT
+
+    # Verify deletion uses the plan's own ID as parent ID when no parent exists
+    mock_supabase_client_for_delete.table().update().or_.assert_called_with(
+        f"id.eq.{plan_id},parent_plan_id.eq.{plan_id}"
+    )
+
+
+def test_delete_plan_null_sessions_count(
+    mock_auth_dependency,
+    mock_supabase_client_for_delete,
+    existing_plan_for_delete,
+):
+    """Test successful deletion when sessions count query returns None."""
+    plan_id = existing_plan_for_delete["id"]
+
+    # Mock responses
+    select_response = MagicMock()
+    select_response.data = [existing_plan_for_delete]
+
+    # Mock sessions count as None (edge case)
+    sessions_response = MagicMock()
+    sessions_response.count = None
+
+    delete_response = MagicMock()
+    delete_response.data = [{"id": plan_id, "deleted_at": "2025-01-03T12:00:00+00:00"}]
+
+    mock_supabase_client_for_delete.table().select().eq().execute.return_value = (
+        select_response
+    )
+    mock_supabase_client_for_delete.table().select().eq().is_().execute.return_value = (
+        sessions_response
+    )
+    mock_supabase_client_for_delete.table().update().or_().execute.return_value = (
+        delete_response
+    )
+
+    response = client.delete(
+        f"/api/v1/plans/{plan_id}",
+        headers={"Authorization": "Bearer mock-token"},
+    )
+
+    # Should succeed since None is treated as 0 active sessions
+    assert response.status_code == status.HTTP_204_NO_CONTENT
