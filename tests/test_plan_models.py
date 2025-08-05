@@ -13,7 +13,6 @@ from src.models import (
     PlanListResponseModel,
     PlanResponseModel,
     PlanUpdateModel,
-    PlanVersionResponseModel,
 )
 
 
@@ -219,11 +218,10 @@ class TestPlanResponseModel:
         response = PlanResponseModel(**response_data)
 
         assert response.id == plan_id
-        assert response.user_id == user_id
+        # user_id, version_number, parent_plan_id, is_active removed from response
         assert response.name == "Test Plan"
-        assert response.version_number == 2
-        assert response.parent_plan_id == parent_id
-        assert response.is_active is True
+        assert response.training_style == "powerlifting"
+        assert response.is_public is True  # Matches the input data
         assert response.created_at == now
 
 
@@ -255,42 +253,19 @@ class TestPlanListResponseModel:
         }
 
         list_data = {
-            "plans": [plan_data],
-            "total_count": 1,
+            "items": [plan_data],
+            "total": 1,
             "page": 1,
-            "page_size": 10,
-            "has_next": False,
+            "per_page": 10,
         }
 
         list_response = PlanListResponseModel(**list_data)
 
-        assert len(list_response.plans) == 1
-        assert list_response.total_count == 1
+        assert len(list_response.items) == 1
+        assert list_response.total == 1
         assert list_response.page == 1
-        assert list_response.page_size == 10
+        assert list_response.per_page == 10
         assert list_response.has_next is False
 
 
-class TestPlanVersionResponseModel:
-    """Test PlanVersionResponseModel."""
-
-    def test_version_response(self):
-        """Test creating a version response."""
-        plan_id = uuid4()
-        now = datetime.now()
-
-        version_data = {
-            "id": plan_id,
-            "version_number": 3,
-            "name": "Test Plan v3",
-            "is_active": False,
-            "created_at": now,
-        }
-
-        version = PlanVersionResponseModel(**version_data)
-
-        assert version.id == plan_id
-        assert version.version_number == 3
-        assert version.name == "Test Plan v3"
-        assert version.is_active is False
-        assert version.created_at == now
+# PlanVersionResponseModel was removed as part of MVP simplification

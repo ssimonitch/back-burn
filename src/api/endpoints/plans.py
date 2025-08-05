@@ -107,13 +107,8 @@ async def create_plan(
         plan_dict["version_number"] = 1
         plan_dict["is_active"] = True
 
-        # TODO: Remove this once training_style column is added to plans table
-        # Temporarily remove training_style from the dict as the column doesn't exist yet
-        if "training_style" in plan_dict:
-            plan_dict.pop("training_style")
-
         # Convert training_style enum to string value if needed
-        # (Pydantic with use_enum_values=True should handle this automatically)
+        # (Pydantic with use_enum_values=True handles this automatically)
 
         # Insert the plan into the database
         response = supabase.table("plans").insert(plan_dict).execute()
@@ -235,9 +230,7 @@ async def get_plans(
         ge=0,
         description="Number of plans to skip for pagination",
     ),
-    # TODO: Re-enable once training_style column is added to plans table
-    # from src.models.enums import TrainingStyle
-    # from typing import Optional
+    # Optional: Add training_style filter in future
     # training_style: Optional[TrainingStyle] = Query(
     #     default=None,
     #     description="Filter plans by training style",
@@ -272,8 +265,7 @@ async def get_plans(
             supabase.table("plans").select("*", count="exact").is_("deleted_at", "null")
         )
 
-        # TODO: Re-enable training_style filter once column is added to plans table
-        # Apply training style filter if provided
+        # Optional: Apply training style filter if provided
         # if training_style:
         #     query = query.eq("training_style", training_style.value)
 
@@ -293,18 +285,16 @@ async def get_plans(
 
         # Calculate pagination metadata
         page = (offset // limit) + 1
-        has_next = (offset + limit) < total_count
 
         # Convert plan data to response models
         plan_models = [PlanResponseModel(**plan) for plan in plans]
 
         # Return the paginated response
         return PlanListResponseModel(
-            plans=plan_models,
-            total_count=total_count,
+            items=plan_models,
+            total=total_count,
             page=page,
-            page_size=limit,
-            has_next=has_next,
+            per_page=limit,
         )
 
     except ValueError as ve:
@@ -621,10 +611,6 @@ async def update_plan(
 
         # Apply the updates
         for key, value in update_data.items():
-            # Skip training_style temporarily if column doesn't exist yet
-            if key == "training_style":
-                # TODO: Remove this check once training_style column is added
-                continue
             new_version_data[key] = value
 
         # Set version-specific fields
@@ -652,10 +638,6 @@ async def update_plan(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to update current plan version",
             )
-
-        # TODO: Remove this once training_style column is added
-        if "training_style" in new_version_data:
-            new_version_data.pop("training_style")
 
         # Create the new version
         insert_response = supabase.table("plans").insert(new_version_data).execute()

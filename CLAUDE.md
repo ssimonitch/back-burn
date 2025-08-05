@@ -176,73 +176,46 @@ class TrainingStyle(StrEnum):
 - `supabase start` - Start local Supabase stack (PostgreSQL, Auth, etc.)
 - `supabase stop` - Stop local Supabase stack
 - `supabase db reset` - Reset database and rerun all migrations
-- `supabase db diff -f <description>` - Generate migration from schema changes
+- `supabase migration new <description>` - Create a new migration file
+- `supabase db diff -f <description>` - Generate migration from database changes (optional)
 - `supabase migration list` - View all migrations and their status
 
-### Declarative Schema Management (New Workflow):
-The project uses **declarative database schemas** for better maintainability and AI collaboration.
+### Database Migration Workflow:
+The project uses **imperative migrations** for simplicity and straightforward AI collaboration.
 
-#### Schema Files:
-All declarative schemas are in `supabase/schemas/` (source of truth), organized one file per table:
-- `00_extensions.sql` - PostgreSQL extensions (uuid-ossp, pgvector)
-- `10_movement_patterns.sql` - Movement patterns reference table
-- `11_muscle_groups.sql` - Muscle groups reference table
-- `12_equipment_types.sql` - Equipment types reference table
-- `13_training_styles.sql` - Training styles reference table
-- `20_profiles.sql` - User profiles + handle_new_user function + increment_affinity_score
-- `30_exercises.sql` - Exercises table with indexes
-- `31_exercise_movement_patterns.sql` - Exercise-movement junction table
-- `32_exercise_muscles.sql` - Exercise-muscle junction table
-- `33_exercise_training_styles.sql` - Exercise-training style junction
-- `34_exercise_relationships.sql` - Exercise relationships
-- `40_plans.sql` - Workout plans table
-- `41_plan_exercises.sql` - Plan exercises junction
-- `50_workout_sessions.sql` - Workout session tracking
-- `51_sets.sql` - Individual set tracking
-- `60_conversations.sql` - AI conversation sessions
-- `61_memories.sql` - AI memories + search_memories function
-- `90_shared_functions.sql` - Cross-table functions (update_updated_at)
-- `91_shared_triggers.sql` - All update_updated_at triggers
-
-**Note**: RLS policies are in `migrations/20250803191436_rls_policies.sql` due to Supabase limitations
+#### Migration Management:
+- `supabase migration new <description>` - Create a new migration file
+- `supabase db diff -f <description>` - Generate migration from database changes (when needed)
+- All database changes go in timestamped migration files in `supabase/migrations/`
 
 #### Development Workflow:
 1. **Making Schema Changes**:
-   - Edit the appropriate schema file directly in `supabase/schemas/`
-   - Regenerate the combined migration: `cat supabase/schemas/*.sql > supabase/migrations/20250803191435_initial_schema.sql`
-   - Test locally with `supabase db reset`
-   - For production changes, use `supabase db diff -f descriptive_name` to generate incremental migrations
-   - Commit both the schema file changes and any new migrations
-
-2. **Example Workflow**:
    ```bash
-   # Edit schema file (e.g., add column to profiles table)
-   # Edit: supabase/schemas/20_profiles.sql
+   # Create a new migration
+   supabase migration new add_user_timezone
    
-   # Regenerate combined migration for local development
-   cat supabase/schemas/*.sql > supabase/migrations/20250803191435_initial_schema.sql
+   # Edit the generated migration file with your SQL changes
+   # Example: supabase/migrations/20250804123456_add_user_timezone.sql
    
-   # Test the changes locally
+   # Test locally
    supabase db reset
    
-   # For production, generate incremental migration
-   supabase db diff -f add_user_timezone
-   
-   # Review generated migration and commit
+   # Commit the migration file
    ```
 
-3. **Benefits**:
-   - See complete schema at a glance
-   - Easier refactoring and code reviews
-   - Better AI assistant collaboration
-   - Maintains migration history for deployments
+2. **Migration Best Practices**:
+   - Use descriptive names: `add_user_preferences`, `update_plans_schema`, `fix_rls_policies`
+   - Keep migrations focused on single logical changes
+   - Include both schema changes and RLS policies in the same migration
+   - Test all migrations with `supabase db reset` before committing
+   - Write reversible migrations when possible (include DROP statements in comments)
 
-#### Migration Files:
-Generated migrations are in `supabase/migrations/`:
-- Auto-generated from schema diffs
-- Provide deployment mechanism and history
-- Run in alphabetical order by timestamp
-- Data migrations still written imperatively when needed
+3. **Benefits of Imperative Approach**:
+   - Simple, linear migration history
+   - RLS policies and schema changes in same files
+   - No conflicts with `supabase db diff`
+   - AI-friendly workflow
+   - Standard PostgreSQL migration pattern
 
 ## Development Workflow
 

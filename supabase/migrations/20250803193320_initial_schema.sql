@@ -21,7 +21,9 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA public;
 CREATE EXTENSION IF NOT EXISTS "vector" WITH SCHEMA extensions;
 
 -- Comment on the extensions schema
-COMMENT ON SCHEMA extensions IS 'Dedicated schema for PostgreSQL extensions to maintain security isolation';-- =============================================================================
+COMMENT ON SCHEMA extensions IS 'Dedicated schema for PostgreSQL extensions to maintain security isolation';
+
+-- =============================================================================
 -- MOVEMENT PATTERNS TABLE
 -- =============================================================================
 -- Reference table for fundamental movement patterns used in exercise classification
@@ -42,7 +44,9 @@ ALTER TABLE public.movement_patterns ENABLE ROW LEVEL SECURITY;
 -- Comments
 COMMENT ON TABLE public.movement_patterns IS 'Reference table for fundamental movement patterns (e.g., squat, hinge, push, pull, carry, gait)';
 COMMENT ON COLUMN public.movement_patterns.name IS 'Unique identifier for the movement pattern (e.g., "squat", "hip_hinge")';
-COMMENT ON COLUMN public.movement_patterns.description IS 'Detailed explanation of the movement pattern and its characteristics';-- =============================================================================
+COMMENT ON COLUMN public.movement_patterns.description IS 'Detailed explanation of the movement pattern and its characteristics';
+
+-- =============================================================================
 -- MUSCLE GROUPS TABLE
 -- =============================================================================
 -- Reference table for muscle groups used in exercise classification and targeting
@@ -65,7 +69,9 @@ ALTER TABLE public.muscle_groups ENABLE ROW LEVEL SECURITY;
 COMMENT ON TABLE public.muscle_groups IS 'Reference table for muscle groups used in exercise classification and targeting';
 COMMENT ON COLUMN public.muscle_groups.name IS 'Name of the muscle group (e.g., "quadriceps", "latissimus_dorsi")';
 COMMENT ON COLUMN public.muscle_groups.muscle_region IS 'Broad anatomical region classification for workout organization';
-COMMENT ON COLUMN public.muscle_groups.description IS 'Anatomical description and function of the muscle group';-- =============================================================================
+COMMENT ON COLUMN public.muscle_groups.description IS 'Anatomical description and function of the muscle group';
+
+-- =============================================================================
 -- EQUIPMENT TYPES TABLE
 -- =============================================================================
 -- Reference table for gym equipment and tools used in exercises
@@ -88,7 +94,9 @@ ALTER TABLE public.equipment_types ENABLE ROW LEVEL SECURITY;
 COMMENT ON TABLE public.equipment_types IS 'Reference table for gym equipment and tools used in exercises';
 COMMENT ON COLUMN public.equipment_types.name IS 'Specific equipment name (e.g., "barbell", "dumbbell", "lat_pulldown_machine")';
 COMMENT ON COLUMN public.equipment_types.category IS 'High-level equipment classification for filtering and organization';
-COMMENT ON COLUMN public.equipment_types.description IS 'Details about the equipment, usage notes, and variations';-- =============================================================================
+COMMENT ON COLUMN public.equipment_types.description IS 'Details about the equipment, usage notes, and variations';
+
+-- =============================================================================
 -- TRAINING STYLES TABLE
 -- =============================================================================
 -- Reference table for different training methodologies and their characteristics
@@ -116,7 +124,9 @@ COMMENT ON COLUMN public.training_styles.name IS 'Training style identifier (e.g
 COMMENT ON COLUMN public.training_styles.typical_rep_range IS 'Common rep ranges used in this training style';
 COMMENT ON COLUMN public.training_styles.typical_set_range IS 'Common set ranges used in this training style';
 COMMENT ON COLUMN public.training_styles.rest_periods IS 'Typical rest periods between sets for this training style';
-COMMENT ON COLUMN public.training_styles.focus_description IS 'Primary focus and goals of this training methodology';-- =============================================================================
+COMMENT ON COLUMN public.training_styles.focus_description IS 'Primary focus and goals of this training methodology';
+
+-- =============================================================================
 -- PROFILES TABLE
 -- =============================================================================
 -- User profiles extending Supabase auth with fitness-specific data
@@ -164,7 +174,8 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Create trigger on auth.users to automatically create profile entries
-CREATE TRIGGER on_auth_user_created
+-- Note: This trigger must be recreated if auth schema is reset
+CREATE OR REPLACE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users
     FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
@@ -198,7 +209,9 @@ COMMENT ON COLUMN public.profiles.username IS 'Unique display name chosen by use
 COMMENT ON COLUMN public.profiles.affinity_score IS 'Tracks user engagement with AI companion, incremented by workout completion and positive interactions';
 COMMENT ON COLUMN public.profiles.goals IS 'Array of user fitness goals (e.g., "lose_weight", "build_muscle", "improve_endurance")';
 COMMENT ON COLUMN public.profiles.preferences IS 'JSONB object storing user preferences for workouts, AI personality, units, etc.';
-COMMENT ON COLUMN public.profiles.fitness_level IS 'Self-reported fitness level used for exercise and plan recommendations';-- =============================================================================
+COMMENT ON COLUMN public.profiles.fitness_level IS 'Self-reported fitness level used for exercise and plan recommendations';
+
+-- =============================================================================
 -- EXERCISES TABLE
 -- =============================================================================
 -- Comprehensive exercise database with detailed biomechanical classifications
@@ -248,7 +261,9 @@ COMMENT ON COLUMN public.exercises.force_vector IS 'Primary direction of force a
 COMMENT ON COLUMN public.exercises.mechanic_type IS 'Joint involvement classification - compound (multi-joint), isolation (single-joint), or hybrid';
 COMMENT ON COLUMN public.exercises.laterality IS 'Whether exercise is performed bilaterally or unilaterally (one side at a time)';
 COMMENT ON COLUMN public.exercises.load_type IS 'Type of resistance used - external weights, bodyweight, or assisted variations';
-COMMENT ON COLUMN public.exercises.metadata IS 'Extensible JSON object for future exercise data and integrations';-- =============================================================================
+COMMENT ON COLUMN public.exercises.metadata IS 'Extensible JSON object for future exercise data and integrations';
+
+-- =============================================================================
 -- EXERCISE MOVEMENT PATTERNS JUNCTION TABLE
 -- =============================================================================
 -- Many-to-many relationship between exercises and fundamental movement patterns
@@ -274,7 +289,9 @@ ALTER TABLE public.exercise_movement_patterns ENABLE ROW LEVEL SECURITY;
 
 -- Comments
 COMMENT ON TABLE public.exercise_movement_patterns IS 'Many-to-many relationship between exercises and fundamental movement patterns';
-COMMENT ON COLUMN public.exercise_movement_patterns.is_primary IS 'Whether this is the primary movement pattern for the exercise (vs secondary/accessory pattern)';-- =============================================================================
+COMMENT ON COLUMN public.exercise_movement_patterns.is_primary IS 'Whether this is the primary movement pattern for the exercise (vs secondary/accessory pattern)';
+
+-- =============================================================================
 -- EXERCISE MUSCLES JUNCTION TABLE
 -- =============================================================================
 -- Many-to-many relationship defining which muscles are worked by each exercise
@@ -303,7 +320,9 @@ ALTER TABLE public.exercise_muscles ENABLE ROW LEVEL SECURITY;
 -- Comments
 COMMENT ON TABLE public.exercise_muscles IS 'Many-to-many relationship defining which muscles are worked by each exercise and their roles';
 COMMENT ON COLUMN public.exercise_muscles.muscle_role IS 'Role of muscle group in exercise - primary mover, secondary mover, or stabilizer';
-COMMENT ON COLUMN public.exercise_muscles.activation_level IS 'Relative activation level from 1 (minimal) to 5 (maximal) for exercise programming';-- =============================================================================
+COMMENT ON COLUMN public.exercise_muscles.activation_level IS 'Relative activation level from 1 (minimal) to 5 (maximal) for exercise programming';
+
+-- =============================================================================
 -- EXERCISE TRAINING STYLES JUNCTION TABLE
 -- =============================================================================
 -- Links exercises to training styles with suitability metrics
@@ -335,7 +354,9 @@ COMMENT ON TABLE public.exercise_training_styles IS 'Many-to-many relationship d
 COMMENT ON COLUMN public.exercise_training_styles.suitability_score IS 'How well-suited this exercise is for the training style (1=poor, 5=excellent)';
 COMMENT ON COLUMN public.exercise_training_styles.optimal_rep_min IS 'Minimum recommended reps for this exercise in this training style';
 COMMENT ON COLUMN public.exercise_training_styles.optimal_rep_max IS 'Maximum recommended reps for this exercise in this training style';
-COMMENT ON COLUMN public.exercise_training_styles.notes IS 'Additional notes about using this exercise in this training style';-- =============================================================================
+COMMENT ON COLUMN public.exercise_training_styles.notes IS 'Additional notes about using this exercise in this training style';
+
+-- =============================================================================
 -- EXERCISE RELATIONSHIPS TABLE
 -- =============================================================================
 -- Defines relationships between exercises for programming and progression
@@ -365,7 +386,9 @@ ALTER TABLE public.exercise_relationships ENABLE ROW LEVEL SECURITY;
 -- Comments
 COMMENT ON TABLE public.exercise_relationships IS 'Defines relationships between exercises for programming and progression recommendations';
 COMMENT ON COLUMN public.exercise_relationships.relationship_type IS 'Type of relationship - variation, progression/regression, alternative, antagonist pair, or superset pairing';
-COMMENT ON COLUMN public.exercise_relationships.notes IS 'Additional context about when to use this relationship (e.g., equipment substitution, injury modification)';-- =============================================================================
+COMMENT ON COLUMN public.exercise_relationships.notes IS 'Additional context about when to use this relationship (e.g., equipment substitution, injury modification)';
+
+-- =============================================================================
 -- PLANS TABLE
 -- =============================================================================
 -- Versioned workout plan templates that can be followed by users or shared publicly
@@ -419,7 +442,9 @@ COMMENT ON COLUMN public.plans.metadata IS 'Additional plan configuration like p
 COMMENT ON COLUMN public.plans.version_number IS 'Version number for this plan iteration (increments with each modification)';
 COMMENT ON COLUMN public.plans.parent_plan_id IS 'References the original plan this version derives from (NULL for v1)';
 COMMENT ON COLUMN public.plans.is_active IS 'Whether this is the current active version of the plan (only one version per plan name should be active)';
-COMMENT ON COLUMN public.plans.deleted_at IS 'Timestamp when plan was soft-deleted. NULL means plan is active/not deleted.';-- =============================================================================
+COMMENT ON COLUMN public.plans.deleted_at IS 'Timestamp when plan was soft-deleted. NULL means plan is active/not deleted.';
+
+-- =============================================================================
 -- PLAN EXERCISES JUNCTION TABLE
 -- =============================================================================
 -- Defines exercises within workout plans and their programming parameters
@@ -457,7 +482,9 @@ COMMENT ON TABLE public.plan_exercises IS 'Junction table defining exercises wit
 COMMENT ON COLUMN public.plan_exercises.day_of_week IS 'Day of week (1=Monday, 7=Sunday) when this exercise is scheduled';
 COMMENT ON COLUMN public.plan_exercises.order_in_day IS 'Order of exercise within the workout session (1st, 2nd, 3rd, etc.)';
 COMMENT ON COLUMN public.plan_exercises.target_reps IS 'Array of target rep ranges for each set (e.g., [8,10,12] for 3 sets)';
-COMMENT ON COLUMN public.plan_exercises.rest_seconds IS 'Recommended rest period between sets in seconds';-- =============================================================================
+COMMENT ON COLUMN public.plan_exercises.rest_seconds IS 'Recommended rest period between sets in seconds';
+
+-- =============================================================================
 -- WORKOUT SESSIONS TABLE
 -- =============================================================================
 -- Individual workout instances with comprehensive performance and wellness tracking
@@ -509,7 +536,9 @@ COMMENT ON COLUMN public.workout_sessions.pre_workout_energy IS 'Energy level be
 COMMENT ON COLUMN public.workout_sessions.post_workout_energy IS 'Energy level after workout (1-10) for recovery tracking';
 COMMENT ON COLUMN public.workout_sessions.training_phase IS 'Current periodization phase for structured programming and progression tracking';
 COMMENT ON COLUMN public.workout_sessions.total_volume IS 'Sum of all volume (weight × reps) for the session';
-COMMENT ON COLUMN public.workout_sessions.total_sets IS 'Total number of sets performed in this session';-- =============================================================================
+COMMENT ON COLUMN public.workout_sessions.total_sets IS 'Total number of sets performed in this session';
+
+-- =============================================================================
 -- SETS TABLE
 -- =============================================================================
 -- Individual exercise sets with detailed performance metrics
@@ -575,7 +604,9 @@ COMMENT ON COLUMN public.sets.set_type IS 'Classification of set purpose within 
 COMMENT ON COLUMN public.sets.reps_in_reserve IS 'Estimated reps remaining before failure (RIR) for autoregulation';
 COMMENT ON COLUMN public.sets.failure_type IS 'Type of failure reached if set was taken to failure';
 COMMENT ON COLUMN public.sets.equipment_variation IS 'Specific equipment variation used (e.g., "close_grip", "wide_stance")';
-COMMENT ON COLUMN public.sets.technique_cues IS 'Array of coaching cues or technical notes for this set';-- =============================================================================
+COMMENT ON COLUMN public.sets.technique_cues IS 'Array of coaching cues or technical notes for this set';
+
+-- =============================================================================
 -- CONVERSATIONS TABLE
 -- =============================================================================
 -- AI chat session boundaries and context for managing conversation history
@@ -607,7 +638,9 @@ ALTER TABLE public.conversations ENABLE ROW LEVEL SECURITY;
 COMMENT ON TABLE public.conversations IS 'AI chat session boundaries and context for managing conversation history and state';
 COMMENT ON COLUMN public.conversations.started_at IS 'When the conversation session began (first message timestamp)';
 COMMENT ON COLUMN public.conversations.ended_at IS 'When the conversation session ended (null for ongoing conversations)';
-COMMENT ON COLUMN public.conversations.context IS 'Session context like conversation summary, user goals, or AI personality state';-- =============================================================================
+COMMENT ON COLUMN public.conversations.context IS 'Session context like conversation summary, user goals, or AI personality state';
+
+-- =============================================================================
 -- MEMORIES TABLE
 -- =============================================================================
 -- AI semantic memory store with vector embeddings for personalized context
@@ -694,7 +727,9 @@ COMMENT ON COLUMN public.memories.content IS 'Text content of the memory for sem
 COMMENT ON COLUMN public.memories.embedding IS 'Vector embedding of content for similarity search (3072 dimensions for gemini-embeddings-001)';
 COMMENT ON COLUMN public.memories.memory_type IS 'Category of memory for filtering and importance weighting';
 COMMENT ON COLUMN public.memories.importance_score IS 'Dynamic importance score from 0-1, may be updated based on relevance and recency';
-COMMENT ON COLUMN public.memories.metadata IS 'Additional memory context like emotion, entities, or confidence scores';-- =============================================================================
+COMMENT ON COLUMN public.memories.metadata IS 'Additional memory context like emotion, entities, or confidence scores';
+
+-- =============================================================================
 -- SHARED FUNCTIONS
 -- =============================================================================
 -- Cross-table utility functions used by multiple tables
@@ -715,7 +750,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-COMMENT ON FUNCTION public.update_updated_at_column() IS 'Trigger function to automatically update the updated_at timestamp when a row is modified';-- =============================================================================
+COMMENT ON FUNCTION public.update_updated_at_column() IS 'Trigger function to automatically update the updated_at timestamp when a row is modified';
+
+-- =============================================================================
 -- SHARED TRIGGERS
 -- =============================================================================
 -- Triggers that apply to multiple tables
