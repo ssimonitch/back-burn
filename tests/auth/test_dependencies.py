@@ -14,39 +14,22 @@ from src.core.auth.dependencies import (
 from src.core.auth.models import JWTPayload
 
 
-@pytest.fixture
-def valid_token_data():
-    """Create valid token data for testing."""
-    return {
-        "sub": "user-123",
-        "email": "test@example.com",
-        "phone": None,
-        "role": "authenticated",
-        "session_id": "session-456",
-        "aal": "aal1",
-        "is_anonymous": False,
-        "app_metadata": {
-            "provider": "email",
-            "providers": ["email"],
-        },
-        "_raw_token": "test.jwt.token",
-    }
-
-
 class TestExtractJWTPayload:
     """Tests for _extract_jwt_payload function."""
 
     @pytest.mark.asyncio
-    async def test_extract_jwt_payload_with_email_provider(self, valid_token_data):
+    async def test_extract_jwt_payload_with_email_provider(
+        self, valid_token_data, mock_user_id
+    ):
         """Test extracting JWT payload with email provider."""
         result = await _extract_jwt_payload(valid_token_data)
 
         assert isinstance(result, JWTPayload)
-        assert result.user_id == "user-123"
+        assert result.user_id == mock_user_id
         assert result.email == "test@example.com"
         assert result.phone is None
         assert result.role == "authenticated"
-        assert result.session_id == "session-456"
+        assert result.session_id == "test-session-456"
         assert result.aal == "aal1"
         assert result.provider == "email"
         assert result.is_anonymous is False
@@ -120,7 +103,7 @@ class TestRequireAuth:
     """Tests for require_auth dependency."""
 
     @pytest.mark.asyncio
-    async def test_require_auth_with_valid_token(self, valid_token_data):
+    async def test_require_auth_with_valid_token(self, valid_token_data, mock_user_id):
         """Test require_auth returns JWT payload with valid token."""
         # Create a mock JWT payload from the token data
         mock_jwt_payload = await _extract_jwt_payload(valid_token_data)
@@ -129,7 +112,7 @@ class TestRequireAuth:
         result = await require_auth(jwt_payload=mock_jwt_payload)
 
         assert isinstance(result, JWTPayload)
-        assert result.user_id == "user-123"
+        assert result.user_id == mock_user_id
         assert result.email == "test@example.com"
 
     @pytest.mark.asyncio

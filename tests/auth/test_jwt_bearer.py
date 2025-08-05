@@ -13,15 +13,6 @@ from src.core.auth.models import JWTPayload
 
 
 @pytest.fixture
-def mock_settings():
-    """Mock settings for testing."""
-    return {
-        "supabase_url": "https://test-project.supabase.co",
-        "supabase_anon_key": "test-anon-key",
-    }
-
-
-@pytest.fixture
 def jwt_bearer(mock_settings):
     """Create a SupabaseJWTBearer instance for testing."""
     return SupabaseJWTBearer(
@@ -30,34 +21,8 @@ def jwt_bearer(mock_settings):
     )
 
 
-@pytest.fixture
-def valid_payload(mock_settings):
-    """Create a valid JWT payload."""
-    now = datetime.now(UTC)
-    return {
-        "sub": "user-123",
-        "email": "test@example.com",
-        "phone": None,
-        "role": "authenticated",
-        "session_id": "session-456",
-        "aal": "aal1",
-        "is_anonymous": False,
-        "iss": f"{mock_settings['supabase_url']}/auth/v1",
-        "aud": "authenticated",
-        "exp": int((now + timedelta(hours=1)).timestamp()),
-        "iat": int(now.timestamp()),
-        "app_metadata": {
-            "provider": "email",
-            "providers": ["email"],
-        },
-        "user_metadata": {
-            "name": "Test User",
-        },
-    }
-
-
 @pytest.mark.asyncio
-async def test_verify_jwt_with_valid_token(jwt_bearer, valid_payload):
+async def test_verify_jwt_with_valid_token(jwt_bearer, valid_jwt_with_timestamps):
     """Test JWT verification with a valid token."""
     # Mock the JWKS response
     mock_jwks = {
@@ -80,22 +45,23 @@ async def test_verify_jwt_with_valid_token(jwt_bearer, valid_payload):
             return_value={"kid": "test-kid", "alg": "RS256"},
         ):
             with patch(
-                "src.core.auth.jwt_bearer.jwt.decode", return_value=valid_payload
+                "src.core.auth.jwt_bearer.jwt.decode",
+                return_value=valid_jwt_with_timestamps,
             ):
                 with patch(
                     "src.core.auth.jwt_bearer.jwk.construct", return_value=Mock()
                 ):
                     result = await jwt_bearer.verify_jwt("valid.jwt.token")
 
-                    assert result == valid_payload
+                    assert result == valid_jwt_with_timestamps
                     mock_get_jwks.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_verify_jwt_with_invalid_issuer(jwt_bearer, valid_payload):
+async def test_verify_jwt_with_invalid_issuer(jwt_bearer, valid_jwt_with_timestamps):
     """Test JWT verification with invalid issuer."""
     # Modify payload with invalid issuer
-    invalid_payload = valid_payload.copy()
+    invalid_payload = valid_jwt_with_timestamps.copy()
     invalid_payload["iss"] = "https://wrong-project.supabase.co/auth/v1"
 
     mock_jwks = {
@@ -131,10 +97,10 @@ async def test_verify_jwt_with_invalid_issuer(jwt_bearer, valid_payload):
 
 
 @pytest.mark.asyncio
-async def test_verify_jwt_with_expired_token(jwt_bearer, valid_payload):
+async def test_verify_jwt_with_expired_token(jwt_bearer, valid_jwt_with_timestamps):
     """Test JWT verification with expired token."""
     # Modify payload to be expired
-    expired_payload = valid_payload.copy()
+    expired_payload = valid_jwt_with_timestamps.copy()
     expired_payload["exp"] = int((datetime.now(UTC) - timedelta(hours=1)).timestamp())
 
     mock_jwks = {
@@ -173,12 +139,12 @@ async def test_verify_jwt_with_expired_token(jwt_bearer, valid_payload):
 
 
 @pytest.mark.asyncio
-async def test_extract_jwt_payload(valid_payload):
+async def test_extract_jwt_payload(valid_jwt_with_timestamps):
     """Test _extract_jwt_payload function."""
-    jwt_payload = await _extract_jwt_payload(valid_payload)
+    jwt_payload = await _extract_jwt_payload(valid_jwt_with_timestamps)
 
     assert isinstance(jwt_payload, JWTPayload)
-    assert jwt_payload.user_id == "user-123"
+    assert jwt_payload.user_id == valid_jwt_with_timestamps["sub"]
     assert jwt_payload.email == "test@example.com"
     assert jwt_payload.phone is None
     assert jwt_payload.role == "authenticated"
@@ -352,10 +318,10 @@ async def test_verify_jwt_with_malformed_token(jwt_bearer):
 
 
 @pytest.mark.asyncio
-async def test_verify_jwt_with_invalid_audience(jwt_bearer, valid_payload):
+async def test_verify_jwt_with_invalid_audience(jwt_bearer, valid_jwt_with_timestamps):
     """Test JWT verification with invalid audience claim."""
     # Modify payload with invalid audience
-    invalid_payload = valid_payload.copy()
+    invalid_payload = valid_jwt_with_timestamps.copy()
     invalid_payload["aud"] = "wrong-audience"
 
     mock_jwks = {
@@ -394,10 +360,10 @@ async def test_verify_jwt_with_invalid_audience(jwt_bearer, valid_payload):
 
 
 @pytest.mark.asyncio
-async def test_verify_jwt_with_invalid_role(jwt_bearer, valid_payload):
+async def test_verify_jwt_with_invalid_role(jwt_bearer, valid_jwt_with_timestamps):
     """Test JWT verification with invalid role claim."""
     # Modify payload with invalid role
-    invalid_payload = valid_payload.copy()
+    invalid_payload = valid_jwt_with_timestamps.copy()
     invalid_payload["role"] = "superadmin"  # Invalid role
 
     mock_jwks = {
@@ -433,10 +399,10 @@ async def test_verify_jwt_with_invalid_role(jwt_bearer, valid_payload):
 
 
 @pytest.mark.asyncio
-async def test_verify_jwt_with_anonymous_user(jwt_bearer, valid_payload):
+async def test_verify_jwt_with_anonymous_user(jwt_bearer, valid_jwt_with_timestamps):
     """Test JWT verification rejects anonymous users when authenticated is required."""
     # Modify payload to be anonymous
-    anon_payload = valid_payload.copy()
+    anon_payload = valid_jwt_with_timestamps.copy()
     anon_payload["is_anonymous"] = True
     anon_payload["role"] = (
         "authenticated"  # Still authenticated role but anonymous flag
@@ -475,10 +441,12 @@ async def test_verify_jwt_with_anonymous_user(jwt_bearer, valid_payload):
 
 
 @pytest.mark.asyncio
-async def test_verify_jwt_with_missing_required_claims(jwt_bearer, valid_payload):
+async def test_verify_jwt_with_missing_required_claims(
+    jwt_bearer, valid_jwt_with_timestamps
+):
     """Test JWT verification with missing required claims."""
     # Remove required claims
-    invalid_payload = valid_payload.copy()
+    invalid_payload = valid_jwt_with_timestamps.copy()
     del invalid_payload["sub"]  # Missing subject claim
 
     mock_jwks = {

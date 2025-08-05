@@ -10,8 +10,47 @@ from src.core.settings import settings
 
 app = FastAPI(
     title="Slow Burn API",
-    description="Backend API for the AI Fitness Companion application",
+    description="""
+## AI Fitness Companion Backend API
+
+The Slow Burn API provides a comprehensive backend for an AI-powered fitness companion application.
+Users develop a deepening relationship with an AI companion as they log workouts and achieve their fitness goals.
+
+### Key Features:
+- 🔐 **JWT Authentication** via Supabase
+- 💪 **Workout Plan Management** with versioning support
+- 🏋️ **Exercise Library** (coming in Sprint 5)
+- 🤖 **AI Chat Integration** with Google Gemini (coming in Sprint 6)
+- 📈 **Progress Tracking** and affinity scoring
+
+### Current Sprint: 3 (Plan Creation)
+For more details, see the [project documentation](https://github.com/yourusername/slow-burn).
+    """,
     version="0.1.0",
+    openapi_tags=[
+        {
+            "name": "auth",
+            "description": "Authentication endpoints for JWT validation",
+        },
+        {
+            "name": "plans",
+            "description": "Workout plan CRUD operations with immutable versioning",
+        },
+        {
+            "name": "workouts",
+            "description": "Workout session logging and tracking (coming in Sprint 4)",
+        },
+        {
+            "name": "exercises",
+            "description": "Exercise library and search (coming in Sprint 5)",
+        },
+        {
+            "name": "chat",
+            "description": "AI companion chat interface (coming in Sprint 6)",
+        },
+    ],
+    docs_url="/docs",
+    redoc_url="/redoc",
 )
 
 # Add CORS middleware
