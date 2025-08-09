@@ -37,11 +37,13 @@ This document tracks dependencies between tasks across all sprints to help ident
 
 ### Dependencies from Previous Sprints
 - ✅ Required: Sets Table (Sprint 2, Task 5) - COMPLETED
-- ⏳ Required: Plans endpoints (Sprint 3)
-- ⏳ Required: Authentication (Sprint 2, Task 8) - IN PROGRESS
+- ✅ Required: Plans endpoints (Sprint 3) - COMPLETED
+- ✅ Required: Authentication (Sprint 2, Task 8) - COMPLETED
 
 ### Will Enable
 - Sprint 7: Affinity system (needs workout completion data)
+- Sprint 5: Exercise usage statistics
+- Sprint 6: AI workout history context
 
 ## **Sprint 5: Exercise Library**
 
