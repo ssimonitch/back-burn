@@ -29,6 +29,7 @@ dev = [
     "pytest-cov>=6.2.1",
     "pytest-asyncio>=1.1.0",
     "pytest-mock>=3.14.1",
+    "openapi-spec-validator>=0.7.2",
 ]
 
 # Black configuration
@@ -94,6 +95,7 @@ module = [
     "httpx.*",
     "cachetools.*",
     "supabase.*",
+    "openapi_spec_validator.*",
 ]
 ignore_missing_imports = true
 
@@ -125,8 +127,13 @@ test-verbose = "pytest -v"
 # Combined tasks
 check = ["lint", "typecheck", "format-check"]
 fix = ["format", "lint-fix"]
-ci = ["lint", "typecheck", "format-check", "test-cov"]
+ci = ["lint", "typecheck", "format-check", "test-cov", "verify-openapi"]
 
 # FastAPI development
 dev = "fastapi dev main.py"
 run = "fastapi run main.py"
+
+# OpenAPI generation
+generate-openapi = "python scripts/generate_openapi.py"
+verify-openapi = "python scripts/verify_openapi.py"
+publish-openapi = "python scripts/publish_openapi.py --generate"

@@ -9,7 +9,16 @@ from fastapi.testclient import TestClient
 
 from main import app
 from src.core.auth.models import JWTPayload
+from src.core.di import get_plans_repository
 from src.models.enums import DifficultyLevel, TrainingStyle
+from src.repositories.plans import PlansRepository
+
+
+@pytest.fixture(autouse=True)
+def _cleanup_dependency_overrides():
+    """Ensure dependency overrides are cleared after every test for isolation."""
+    yield
+    app.dependency_overrides.clear()
 
 
 @pytest.fixture
@@ -192,6 +201,82 @@ def mock_supabase_client():
     # Clean up the override after the test
     if get_supabase_client in app.dependency_overrides:
         del app.dependency_overrides[get_supabase_client]
+
+
+@pytest.fixture
+def mock_plans_repo():
+    """Provide and override a PlansRepository for endpoint tests.
+
+    Prefer this over mocking Supabase chains for clarity and stability.
+    """
+    mock_repo = MagicMock(spec=PlansRepository)
+    app.dependency_overrides[get_plans_repository] = lambda: mock_repo
+    try:
+        yield mock_repo
+    finally:
+        if get_plans_repository in app.dependency_overrides:
+            del app.dependency_overrides[get_plans_repository]
+
+
+# -------------------------
+# Supabase mock helpers
+# -------------------------
+
+
+def set_insert_result(mock_client: MagicMock, data: list[dict] | None = None):
+    """Configure the mock to return data for an insert().execute()."""
+    response = MagicMock()
+    response.data = data or []
+    mock_client.table.return_value.insert.return_value.execute.return_value = response
+    return response
+
+
+def set_update_result(mock_client: MagicMock, data: list[dict] | None = None):
+    """Configure the mock to return data for an update().eq().execute()."""
+    response = MagicMock()
+    response.data = data or []
+    mock_client.table.return_value.update.return_value.eq.return_value.execute.return_value = response
+    return response
+
+
+def set_select_result(
+    mock_client: MagicMock,
+    data: list[dict] | None = None,
+    count: int | None = None,
+    chain: str = "select_eq_is_range",
+):
+    """Configure the mock to return data for various select chains.
+
+    chain options:
+      - 'select_eq_is'   -> .table().select().eq().is_().execute()
+      - 'select_eq'      -> .table().select().eq().execute()
+      - 'select_is_order_range' -> .table().select().is_().order().range().execute()
+      - 'select_is'      -> .table().select().is_().execute()
+      - 'select_range'   -> .table().select().range().execute()
+    """
+    response = MagicMock()
+    response.data = data or []
+    if count is not None:
+        response.count = count
+
+    tbl = mock_client.table.return_value
+    sel = tbl.select.return_value
+    if chain == "select_eq_is_range":
+        sel.eq.return_value.is_.return_value.order.return_value.range.return_value.execute.return_value = response
+    elif chain == "select_eq_is":
+        sel.eq.return_value.is_.return_value.execute.return_value = response
+    elif chain == "select_eq":
+        sel.eq.return_value.execute.return_value = response
+    elif chain == "select_is_order_range":
+        sel.is_.return_value.order.return_value.range.return_value.execute.return_value = response
+    elif chain == "select_is":
+        sel.is_.return_value.execute.return_value = response
+    elif chain == "select_range":
+        sel.range.return_value.execute.return_value = response
+    else:
+        # Default fall-through to simple execute
+        sel.execute.return_value = response
+    return response
 
 
 @pytest.fixture

@@ -12,7 +12,31 @@ All plan endpoints (except GET /plans/{plan_id} for public plans) require JWT au
 Authorization: Bearer <your-jwt-token>
 ```
 
+### Authentication model
+
+- Global Bearer auth is required for all endpoints unless explicitly disabled per operation in the OpenAPI schema.
+- Public endpoints (no auth required): `/`, `/health`, `/api/v1/auth/public`.
+
 ## Plan Endpoints
+
+### Using the OpenAPI Contract
+
+- `openapi.json` at the repo root is the single source of truth for request/response shapes, authentication, and pagination.
+- Common commands:
+  ```bash
+  uv run poe generate-openapi   # Generate schema
+  uv run poe verify-openapi     # Verify schema is current (validates if validator is installed)
+  uv run poe publish-openapi    # Copy schema to ../frontend/openapi.json
+  ```
+- The schema includes a `servers` block for local base URL; override in clients as needed for staging/prod.
+
+### Client generation
+
+You can generate a typed client from the schema. Example (TypeScript):
+
+```bash
+npx openapi-typescript-codegen --input ../backend/openapi.json --output src/generated --client axios
+```
 
 ### POST /api/v1/plans
 
@@ -100,10 +124,14 @@ GET /api/v1/plans?limit=10&offset=20
   ],
   "total": 25,
   "page": 3,
-  "per_page": 10,
-  "has_next": true
+  "per_page": 10
 }
 ```
+
+#### Pagination contract
+
+- Body fields: `{ items, total, page, per_page }`.
+- There is no `X-Total-Count` header and no `has_next` field; clients can compute `has_next` as `page * per_page < total`.
 
 ### GET /api/v1/plans/{plan_id}
 
@@ -273,3 +301,18 @@ A Postman collection with all endpoints and example requests is available at:
 3. Enums are sent as strings (not integers)
 4. Empty arrays and objects are included in responses (not null)
 5. Pagination uses `offset/limit` pattern, not cursor-based
+
+## Change management and workflow
+
+When adding/changing endpoints or models:
+
+- Update FastAPI routes and Pydantic models, including response examples.
+- Regenerate and verify the schema:
+  ```bash
+  uv run poe verify-openapi           # add --update locally to auto-regenerate
+  ```
+- Commit the updated `openapi.json`. If a breaking change is introduced, bump the API version in `pyproject.toml` (reflected in `info.version`) and coordinate with frontend.
+
+### Schema validation (optional)
+
+If `openapi-spec-validator` is installed, verification will validate the schema. You can skip with `--no-validate`.

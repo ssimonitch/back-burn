@@ -6,20 +6,21 @@ and managing workout plans. Plans are versioned and immutable - updates
 create new versions rather than modifying existing plans.
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime  # noqa: F401 (left for reference in docstrings)
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from src.core.auth import JWTPayload, optional_auth, require_auth
-from src.core.utils import get_supabase_client
+from src.core.di import get_plans_repository
 from src.models.plan import (
     PlanCreateModel,
     PlanListResponseModel,
     PlanResponseModel,
     PlanUpdateModel,
 )
-from supabase import Client
+from src.repositories.plans import PlansRepository
+from supabase import Client  # noqa: F401 (kept for OpenAPI type hints if needed)
 
 router = APIRouter(prefix="/api/v1/plans", tags=["plans"])
 
@@ -77,7 +78,7 @@ router = APIRouter(prefix="/api/v1/plans", tags=["plans"])
 async def create_plan(
     plan_data: PlanCreateModel,
     jwt_payload: JWTPayload = Depends(require_auth),
-    supabase: Client = Depends(get_supabase_client),
+    repo: PlansRepository = Depends(get_plans_repository),
 ) -> PlanResponseModel:
     """
     Create a new workout plan.
@@ -97,30 +98,8 @@ async def create_plan(
         HTTPException: If plan creation fails due to validation or database errors
     """
     try:
-        # Prepare the plan data for database insertion
-        plan_dict = plan_data.model_dump()
-
-        # Add user_id from the JWT payload
-        plan_dict["user_id"] = jwt_payload.user_id
-
-        # Ensure version_number is set for new plans
-        plan_dict["version_number"] = 1
-        plan_dict["is_active"] = True
-
-        # Convert training_style enum to string value if needed
-        # (Pydantic with use_enum_values=True handles this automatically)
-
-        # Insert the plan into the database
-        response = supabase.table("plans").insert(plan_dict).execute()
-
-        if not response.data or len(response.data) == 0:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to create plan - no data returned",
-            )
-
-        # Return the created plan
-        created_plan = response.data[0]
+        # Create plan via repository
+        created_plan = repo.create(jwt_payload.user_id, plan_data.model_dump())
         return PlanResponseModel(**created_plan)
 
     except HTTPException:
@@ -170,6 +149,12 @@ async def create_plan(
                     detail=f"Validation error: {error_message}",
                 )
         else:
+            # Preserve previous detail message when repo returns no data
+            if "no data returned" in error_message.lower():
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to create plan - no data returned",
+                )
             # Log the error in production
             # logger.error(f"Failed to create plan: {error_message}")
             raise HTTPException(
@@ -236,7 +221,7 @@ async def get_plans(
     #     description="Filter plans by training style",
     # ),
     jwt_payload: JWTPayload = Depends(require_auth),
-    supabase: Client = Depends(get_supabase_client),
+    repo: PlansRepository = Depends(get_plans_repository),
 ) -> PlanListResponseModel:
     """
     Retrieve a paginated list of the authenticated user's workout plans.
@@ -258,30 +243,7 @@ async def get_plans(
         HTTPException: If plan retrieval fails due to database errors
     """
     try:
-        # Build the base query for the user's plans
-        # RLS policies ensure we only get plans for the authenticated user
-        # Filter out soft-deleted plans
-        query = (
-            supabase.table("plans").select("*", count="exact").is_("deleted_at", "null")
-        )
-
-        # Optional: Apply training style filter if provided
-        # if training_style:
-        #     query = query.eq("training_style", training_style.value)
-
-        # Apply sorting by created_at DESC (most recent first)
-        # Note: Plans are immutable - new versions are created instead of updates
-        query = query.order("created_at", desc=True)
-
-        # Apply pagination
-        query = query.range(offset, offset + limit - 1)
-
-        # Execute the query
-        response = query.execute()
-
-        # Extract the plans and total count
-        plans = response.data if response.data else []
-        total_count = response.count if response.count is not None else 0
+        plans, total_count = repo.list(jwt_payload.user_id, limit, offset)
 
         # Calculate pagination metadata
         page = (offset // limit) + 1
@@ -355,7 +317,7 @@ async def get_plans(
 async def get_plan_by_id(
     plan_id: UUID,
     jwt_payload: JWTPayload | None = Depends(optional_auth),
-    supabase: Client = Depends(get_supabase_client),
+    repo: PlansRepository = Depends(get_plans_repository),
 ) -> PlanResponseModel:
     """
     Retrieve a specific workout plan by its ID.
@@ -378,27 +340,12 @@ async def get_plan_by_id(
             - 500 if retrieval fails due to database errors
     """
     try:
-        # Build the query for retrieving the plan
-        # Filter out soft-deleted plans
-        query = (
-            supabase.table("plans")
-            .select("*")
-            .eq("id", plan_id)
-            .is_("deleted_at", "null")
-        )
-
-        # Execute the query without .single() first to handle no results gracefully
-        response = query.execute()
-
-        # Check if we got any data back
-        if not response.data or len(response.data) == 0:
+        plan = repo.get_raw(plan_id)
+        if not plan:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Plan not found",
             )
-
-        # Get the first (and should be only) plan
-        plan = response.data[0]
 
         # For unauthenticated users, verify the plan is public
         if not jwt_payload and not plan.get("is_public", False):
@@ -528,7 +475,7 @@ async def update_plan(
     plan_id: UUID,
     plan_update: PlanUpdateModel,
     jwt_payload: JWTPayload = Depends(require_auth),
-    supabase: Client = Depends(get_supabase_client),
+    repo: PlansRepository = Depends(get_plans_repository),
 ) -> PlanResponseModel:
     """
     Update a workout plan by creating a new version.
@@ -569,23 +516,12 @@ async def update_plan(
                 detail="No changes provided in update request",
             )
 
-        # Retrieve the current plan to verify ownership and status
-        # Filter out soft-deleted plans
-        query = (
-            supabase.table("plans")
-            .select("*")
-            .eq("id", plan_id)
-            .is_("deleted_at", "null")
-        )
-        response = query.execute()
-
-        if not response.data or len(response.data) == 0:
+        current_plan = repo.get_raw(plan_id)
+        if not current_plan:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Plan not found",
             )
-
-        current_plan = response.data[0]
 
         # Verify the user owns this plan
         if str(current_plan.get("user_id")) != str(jwt_payload.user_id):
@@ -626,34 +562,23 @@ async def update_plan(
 
         # Start a transaction-like operation
         # First, mark the current version as inactive
-        update_response = (
-            supabase.table("plans")
-            .update({"is_active": False})
-            .eq("id", plan_id)
-            .execute()
-        )
-
-        if not update_response.data:
+        if not repo.mark_inactive(plan_id):
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to update current plan version",
             )
 
         # Create the new version
-        insert_response = supabase.table("plans").insert(new_version_data).execute()
-
-        if not insert_response.data or len(insert_response.data) == 0:
+        new_version = repo.insert_plan(new_version_data)
+        if not new_version:
             # Rollback: mark the original as active again
-            supabase.table("plans").update({"is_active": True}).eq(
-                "id", plan_id
-            ).execute()
+            repo.set_active(plan_id, True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to create new plan version",
             )
 
         # Return the newly created version
-        new_version = insert_response.data[0]
         return PlanResponseModel(**new_version)
 
     except HTTPException:
@@ -760,7 +685,7 @@ async def update_plan(
 async def delete_plan(
     plan_id: UUID,
     jwt_payload: JWTPayload = Depends(require_auth),
-    supabase: Client = Depends(get_supabase_client),
+    repo: PlansRepository = Depends(get_plans_repository),
 ) -> None:
     """
     Soft delete a workout plan.
@@ -785,17 +710,12 @@ async def delete_plan(
             - 500 if deletion fails due to database errors
     """
     try:
-        # Retrieve the plan to verify ownership and check if already deleted
-        query = supabase.table("plans").select("*").eq("id", plan_id)
-        response = query.execute()
-
-        if not response.data or len(response.data) == 0:
+        plan = repo.get_raw(plan_id, include_deleted=True)
+        if not plan:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Plan not found",
             )
-
-        plan = response.data[0]
 
         # Check if plan is already deleted
         if plan.get("deleted_at") is not None:
@@ -814,17 +734,7 @@ async def delete_plan(
         # Check for active workout sessions using this plan
         # We check for sessions that reference this plan and are not completed
         # (completed_at is NULL means the session is ongoing/active)
-        sessions_query = (
-            supabase.table("workout_sessions")
-            .select("id", count="exact")
-            .eq("plan_id", plan_id)
-            .is_("completed_at", "null")
-        )
-        sessions_response = sessions_query.execute()
-
-        active_sessions_count = (
-            sessions_response.count if sessions_response.count is not None else 0
-        )
+        active_sessions_count = repo.count_active_sessions(plan_id)
 
         if active_sessions_count > 0:
             raise HTTPException(
@@ -839,18 +749,9 @@ async def delete_plan(
 
         # Perform the soft delete by setting deleted_at timestamp
         # Delete the specific plan and all its versions
-        delete_timestamp = datetime.now(UTC).isoformat()
-
         # Delete all versions of this plan (including the parent)
         # We delete where id matches OR parent_plan_id matches
-        delete_response = (
-            supabase.table("plans")
-            .update({"deleted_at": delete_timestamp})
-            .or_(f"id.eq.{plan_id},parent_plan_id.eq.{parent_id}")
-            .execute()
-        )
-
-        if not delete_response.data:
+        if not repo.soft_delete_cascade(plan_id, UUID(parent_id)):
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to delete plan",

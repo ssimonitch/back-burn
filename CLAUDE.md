@@ -41,6 +41,7 @@ backend/
 │   │   └── endpoints/     # Individual endpoint modules
 │   ├── core/              # Core configuration and dependencies
 │   ├── models/            # Pydantic models for validation
+│   ├── repositories/      # Thin repository layer (Supabase-backed implementations)
 │   ├── services/          # Business logic and external integrations
 │   └── utils/             # Utility functions
 ├── tests/                  # Test files
@@ -107,6 +108,24 @@ When implementing chat endpoints:
 5. Process structured JSON response
 6. Update affinity score if applicable
 7. Return response to frontend
+
+## Working with the Repository Pattern
+
+- Endpoints depend on repository protocols via DI. Provider: `src/core/di.py` (`get_plans_repository`).
+- Repositories are intentionally thin and return raw dicts. Endpoints construct/validate Pydantic models to keep API contract enforcement centralized.
+- Keep repository APIs minimal. Add methods only when they reduce duplication in endpoints and tests (e.g., `list`, `get_raw`, `insert_plan`, `mark_inactive`, `soft_delete_cascade`).
+
+### Tests
+- Prefer mocking repositories over Supabase chains: use `mock_plans_repo` fixture from `tests/conftest.py`.
+- Example:
+```python
+def test_list_plans(mock_auth_dependency, mock_plans_repo):
+    mock_plans_repo.list.return_value = ([{"id": "...", "name": "..."}], 1)
+    # call endpoint and assert
+```
+
+### OpenAPI Contract
+- Keep endpoints model-first. When repositories change, the OpenAPI schema should not drift because models and routes remain the single source of truth.
 
 ### Database Schema (Sprint 2 - Completed)
 All core tables have been implemented with production-ready features:
@@ -200,13 +219,13 @@ The project uses **imperative migrations** for simplicity and straightforward AI
    ```bash
    # Create a new migration
    supabase migration new add_user_timezone
-   
+
    # Edit the generated migration file with your SQL changes
    # Example: supabase/migrations/20250804123456_add_user_timezone.sql
-   
+
    # Test locally
    supabase db reset
-   
+
    # Commit the migration file
    ```
 

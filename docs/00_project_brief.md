@@ -32,11 +32,13 @@ The backend will be a stateless API service that follows RESTful principles.
 
 * **API Structure:** Endpoints will be organized logically using FastAPI's APIRouter. For example, all endpoints related to workout plans will be grouped under a /plans router.
 * **Data Validation:** Pydantic models will be used extensively to define the expected request and response shapes for all API endpoints. This provides automatic request validation and clear, auto-generated API documentation (via Swagger UI and ReDoc).
+* **API Contract & Workflow:** The OpenAPI schema (`openapi.json`) is the single source of truth for the API. The backend generates it from FastAPI, validates it in CI, and the frontend consumes it for types and client generation.
 * **Authentication Flow (Hybrid Model):**
   * **Frontend Responsibility:** The React frontend handles all primary user-facing authentication actions (Sign Up, Login, Password Reset, etc.) by interacting directly with the Supabase client-side library (supabase-js).
   * **Backend Responsibility:** The backend does not have user-facing endpoints like `/login` or `/signup`. Its sole authentication duty is to act as a protected resource server. On every incoming request to a protected endpoint, a FastAPI dependency will validate the JWT sent in the `Authorization` header. This validation is done locally and performantly using a cached JWKS.
   * **Server-Side Actions:** The `supabase-py` library will be used on the backend only for infrequent, server-initiated auth actions if needed in the future (e.g., admin tasks), not for handling user sessions.
 * **Database Interaction:** All database operations will be handled through the `supabase-py` client library or a direct PostgreSQL connector like psycopg2. The backend will contain all the SQL queries or ORM logic, abstracting the database layer from the frontend.
+* **Repository Pattern & DI:** A thin repository layer abstracts data-access (e.g., `PlansRepository`). Repositories are provided via FastAPI DI (see `src/core/di.py`). Repositories return raw dicts; endpoints construct Pydantic models and map validation errors to HTTP responses to keep the API contract centralized and stable.
 * **AI Interaction Flow:** For a chat request, the backend will:
   1. Receive the user's message from the frontend.
   2. Use the user's user\_id to query the memories table in PostgreSQL, performing a vector similarity search with pgvector to find relevant past interactions.
@@ -45,6 +47,45 @@ The backend will be a stateless API service that follows RESTful principles.
   5. Receive the structured JSON response from Gemini.
   6. Perform any necessary business logic (e.g., logging the interaction).
   7. Return the final JSON payload to the frontend.
+
+### API Contract Details
+
+- **Generation & Verification**
+  - Generate schema: `uv run poe generate-openapi`
+  - Verify schema: `uv run poe verify-openapi` (validates if validator is installed)
+  - Publish to frontend: `uv run poe publish-openapi`
+
+- **Versioning Source**
+  - API version is read from `pyproject.toml` and embedded in the schema `info.version`.
+  - SemVer policy:
+    - Patch: strictly additive, non-breaking (docs/example updates)
+    - Minor: backward compatible additions (new endpoints/fields)
+    - Major: breaking changes (field removal/rename, type changes, auth changes)
+
+- **Auth Model**
+  - Global Bearer auth is required unless an operation explicitly sets `security: []`.
+  - Public routes: `/`, `/health`, `/api/v1/auth/public`.
+
+- **Pagination Contract**
+  - Response body includes: `items`, `total`, `page`, `per_page`.
+  - No `X-Total-Count` header; `has_next` can be computed by clients.
+
+### Breaking Change Policy
+
+- What is breaking:
+  - Removing or renaming fields, changing field types or requiredness
+  - Changing auth requirements for existing operations
+  - Path changes or response envelope changes
+
+- Required actions:
+  - Bump major version in `pyproject.toml` (propagates to schema)
+  - Communicate impact to frontend and coordinate rollout
+  - Consider deprecation periods and dual-contract windows where feasible
+
+### Testing Alignment
+
+- Tests should reflect OpenAPI shapes. Pydantic models enforce schema alignment.
+- Avoid undocumented fields in examples. If the schema changes, update tests and `openapi.json` together.
 
 ## **4\. Backend MVP Sprint Plan (8 Weeks)**
 

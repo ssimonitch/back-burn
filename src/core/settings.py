@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     api_host: str = Field("localhost", description="API host")
     api_port: int = Field(8000, description="API port")
     frontend_url: str = Field(
-        "http://localhost:3000", description="Frontend URL for CORS"
+        "http://localhost:5173", description="Frontend URL for CORS"
     )
 
     # Security Configuration
