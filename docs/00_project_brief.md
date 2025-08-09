@@ -39,6 +39,8 @@ The backend will be a stateless API service that follows RESTful principles.
   * **Server-Side Actions:** The `supabase-py` library will be used on the backend only for infrequent, server-initiated auth actions if needed in the future (e.g., admin tasks), not for handling user sessions.
 * **Database Interaction:** All database operations will be handled through the `supabase-py` client library or a direct PostgreSQL connector like psycopg2. The backend will contain all the SQL queries or ORM logic, abstracting the database layer from the frontend.
 * **Repository Pattern & DI:** A thin repository layer abstracts data-access (e.g., `PlansRepository`). Repositories are provided via FastAPI DI (see `src/core/di.py`). Repositories return raw dicts; endpoints construct Pydantic models and map validation errors to HTTP responses to keep the API contract centralized and stable.
+  * Typing: Repository outputs use minimal `TypedDict`s (e.g., `DBPlanRow`) to improve editor/type safety without coupling endpoints to schema internals.
+  * Testing & Coverage: The test suite enforces a minimum 80% coverage threshold to prevent regressions.
 * **AI Interaction Flow:** For a chat request, the backend will:
   1. Receive the user's message from the frontend.
   2. Use the user's user\_id to query the memories table in PostgreSQL, performing a vector similarity search with pgvector to find relevant past interactions.

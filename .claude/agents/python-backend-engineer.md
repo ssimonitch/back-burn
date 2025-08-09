@@ -31,15 +31,14 @@ You implement the business logic layer that sits between API endpoints and data 
 **Implementation Guidelines:**
 
 1. **Service Layer Architecture:**
-   - Create clean service classes in `src/services/` that encapsulate business logic
-   - Keep services focused on single responsibilities
-   - Use dependency injection for database and external service access
-   - Return domain models or DTOs, not raw database records
+   - Prefer keeping endpoints model-first and repositories thin per project conventions; only introduce services when the business logic grows complex
+   - If needed, create focused service classes in `src/services/` and inject repositories via DI
+   - Return Pydantic models or DTOs at the boundary; keep repositories returning raw typed dicts
    - Handle business rule validation and complex workflows
 
 2. **Data Processing:**
    - Implement efficient data transformation pipelines
-   - Use appropriate data structures (dataclasses, TypedDict, NamedTuple)
+   - Use appropriate data structures (dataclasses, TypedDict, NamedTuple). For DB rows, prefer the project’s `TypedDict`s (e.g., `DBPlanRow`).
    - Leverage Python's built-in functions and comprehensions for performance
    - Consider memory efficiency for large datasets
    - Implement proper error handling for data validation

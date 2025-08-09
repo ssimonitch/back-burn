@@ -59,6 +59,8 @@ uv run poe test-cov       # Tests with coverage
 uv run poe test-verbose   # Verbose test output
 ```
 
+Coverage gate: tests must maintain >= 80% coverage (enforced via pytest config).
+
 ### Combined flows
 ```bash
 uv run poe check          # Lint + typecheck + format-check
@@ -114,6 +116,7 @@ We use a thin Repository pattern to abstract Supabase calls and make tests stabl
 - **Protocol**: See `src/repositories/plans.py` for `PlansRepository` interface and `SupabasePlansRepository` implementation.
 - **Dependency Injection**: Endpoints depend on repositories via FastAPI DI. Provider lives in `src/core/di.py` as `get_plans_repository`.
 - **Model-first endpoints**: Repositories return raw dicts; endpoints construct Pydantic models and map `ValueError`/`ValidationError` to HTTP errors to preserve API behavior and OpenAPI contracts.
+- **Lightweight typing**: Repository outputs use minimal `TypedDict`s for DB rows (e.g., `DBPlanRow`) to improve editor/type safety without coupling endpoints to SQL schemas.
 
 Testing with the Repository pattern:
 
