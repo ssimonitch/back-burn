@@ -8,6 +8,7 @@ import pytest
 
 from src.core.auth.dependencies import (
     _extract_jwt_payload,
+    get_mfa_user,
     optional_auth,
     require_auth,
 )
@@ -161,6 +162,34 @@ class TestOptionalAuth:
         result = await optional_auth(token_data=None)
 
         assert result is None
+
+
+class TestGetMFAUser:
+    """Tests for MFA user dependency."""
+
+    @pytest.mark.asyncio
+    async def test_get_mfa_user_requires_aal2(self):
+        payload = JWTPayload(
+            user_id="u1",
+            email="e@example.com",
+            role="authenticated",
+            session_id="s1",
+            aal="aal1",
+        )
+        with pytest.raises(Exception):
+            await get_mfa_user(jwt_payload=payload)
+
+    @pytest.mark.asyncio
+    async def test_get_mfa_user_passes_for_aal2(self):
+        payload = JWTPayload(
+            user_id="u1",
+            email="e@example.com",
+            role="authenticated",
+            session_id="s1",
+            aal="aal2",
+        )
+        result = await get_mfa_user(jwt_payload=payload)
+        assert result is payload
 
     @pytest.mark.asyncio
     async def test_optional_auth_with_invalid_token(self):

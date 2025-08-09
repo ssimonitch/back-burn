@@ -9,22 +9,47 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import Protocol
+from typing import Any, Protocol, TypedDict
 from uuid import UUID
 
 from supabase import Client
 
 
+class DBPlanRow(TypedDict, total=False):
+    """Dictionary shape returned by the database for a plan row.
+
+    This intentionally mirrors the raw DB payload. Endpoints remain responsible
+    for constructing Pydantic response models and filtering fields as needed.
+    """
+
+    id: str
+    user_id: str
+    name: str
+    description: str | None
+    training_style: str
+    goal: str | None
+    difficulty_level: str | None
+    duration_weeks: int | None
+    days_per_week: int | None
+    is_public: bool
+    metadata: dict[str, Any]
+    version_number: int
+    parent_plan_id: str | None
+    is_active: bool
+    created_at: str
+    deleted_at: str | None
+
+
 class PlansRepository(Protocol):
-    def create(self, user_id: str, payload: dict) -> dict: ...
+    def create(self, user_id: str, payload: dict) -> DBPlanRow: ...
 
     def list(
         self, user_id: str, limit: int, offset: int
-    ) -> tuple[Sequence[dict], int]: ...
+    ) -> tuple[Sequence[DBPlanRow], int]: ...
 
     def get_raw(
         self, plan_id: UUID, *, include_deleted: bool = False
-    ) -> dict | None: ...
+    ) -> DBPlanRow | None: ...
 
     def count_active_sessions(self, plan_id: UUID) -> int: ...
 
@@ -32,7 +57,7 @@ class PlansRepository(Protocol):
 
     def set_active(self, plan_id: UUID, active: bool) -> bool: ...
 
-    def insert_plan(self, plan_data: dict) -> dict | None: ...
+    def insert_plan(self, plan_data: dict) -> DBPlanRow | None: ...
 
     def soft_delete_cascade(self, plan_id: UUID, parent_id: UUID) -> bool: ...
 
@@ -41,7 +66,7 @@ class SupabasePlansRepository:
     def __init__(self, client: Client) -> None:
         self.client = client
 
-    def create(self, user_id: str, payload: dict) -> dict:
+    def create(self, user_id: str, payload: dict) -> DBPlanRow:
         data = dict(payload)
         data["user_id"] = user_id
         data.setdefault("version_number", 1)
@@ -51,20 +76,25 @@ class SupabasePlansRepository:
             raise RuntimeError("Failed to create plan - no data returned")
         return resp.data[0]
 
-    def list(self, user_id: str, limit: int, offset: int) -> tuple[Sequence[dict], int]:
+    def list(
+        self, user_id: str, limit: int, offset: int
+    ) -> tuple[Sequence[DBPlanRow], int]:
         q = (
             self.client.table("plans")
             .select("*", count="exact")
+            .eq("user_id", user_id)
             .is_("deleted_at", "null")
             .order("created_at", desc=True)
             .range(offset, offset + limit - 1)
         )
         resp = q.execute()
-        items = resp.data or []
+        items: Sequence[DBPlanRow] = resp.data or []
         total = resp.count or 0
         return items, total
 
-    def get_raw(self, plan_id: UUID, *, include_deleted: bool = False) -> dict | None:
+    def get_raw(
+        self, plan_id: UUID, *, include_deleted: bool = False
+    ) -> DBPlanRow | None:
         tbl = self.client.table("plans")
         q = tbl.select("*").eq("id", plan_id)
         if include_deleted:
@@ -106,7 +136,7 @@ class SupabasePlansRepository:
         )
         return bool(resp.data)
 
-    def insert_plan(self, plan_data: dict) -> dict | None:
+    def insert_plan(self, plan_data: dict) -> DBPlanRow | None:
         resp = self.client.table("plans").insert(plan_data).execute()
         if not resp.data:
             return None

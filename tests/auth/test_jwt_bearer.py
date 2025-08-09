@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock, patch
 
 import pytest
+from jose import jwt
 
 from src.core.auth.dependencies import _extract_jwt_payload
 from src.core.auth.jwt_bearer import SupabaseJWTBearer
@@ -480,3 +481,153 @@ async def test_verify_jwt_with_missing_required_claims(
                     ):
                         result = await jwt_bearer.verify_jwt("token.missing.sub")
                         assert result is None
+
+
+@pytest.mark.asyncio
+async def test_verify_jwt_hs256_shared_secret_success(mock_settings):
+    """HS256 path: verify with shared secret and claim validation passes."""
+    jwt_bearer = SupabaseJWTBearer(
+        supabase_url=mock_settings["supabase_url"],
+        supabase_anon_key=mock_settings["supabase_anon_key"],
+        jwt_algorithm="HS256",
+        jwt_secret="test-secret",
+    )
+
+    now = datetime.now(UTC)
+    payload = {
+        "sub": "user-123",
+        "email": "test@example.com",
+        "role": "authenticated",
+        "session_id": "sess-1",
+        "aal": "aal1",
+        "iss": f"{mock_settings['supabase_url']}/auth/v1",
+        "aud": "authenticated",
+        "exp": int((now + timedelta(hours=1)).timestamp()),
+        "iat": int(now.timestamp()),
+        "is_anonymous": False,
+    }
+    token = jwt.encode(payload, "test-secret", algorithm="HS256")
+
+    result = await jwt_bearer.verify_jwt(token)
+    assert result is not None
+    assert result["sub"] == "user-123"
+
+
+@pytest.mark.asyncio
+async def test_verify_jwt_api_fallback_success(jwt_bearer, mock_settings):
+    """Fallback path: Supabase Auth API returns 200 and payload is decoded without signature."""
+    # Force primary path to fail so we hit fallback
+    with patch(
+        "src.core.auth.jwt_bearer.jwt.get_unverified_header",
+        side_effect=Exception("boom"),
+    ):
+        # Mock HTTP call
+        class MockResponse:
+            status_code = 200
+
+        async def mock_get(url, headers):  # noqa: ARG001
+            return MockResponse()
+
+        class MockClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):  # noqa: D401
+                return False
+
+            async def get(self, url, headers):
+                return await mock_get(url, headers)
+
+        with patch(
+            "src.core.auth.jwt_bearer.httpx.AsyncClient", return_value=MockClient()
+        ):
+            # Provide a simple payload we can recognize when decode is called without verification
+            expected = {"sub": "fallback-user"}
+            with patch(
+                "src.core.auth.jwt_bearer.jwt.decode",
+                return_value=expected,
+            ):
+                result = await jwt_bearer.verify_jwt("any.token")
+                assert result == expected
+
+
+@pytest.mark.asyncio
+async def test_http_bearer_call_success_sets_raw_token(jwt_bearer):
+    """__call__: valid header path adds _raw_token to returned payload."""
+    mock_request = Mock()
+    mock_request.headers = {"Authorization": "Bearer test.jwt"}
+
+    with patch.object(
+        jwt_bearer, "verify_jwt", return_value={"sub": "user-1"}
+    ) as verify_mock:
+        result = await jwt_bearer(mock_request)
+        assert result["_raw_token"] == "test.jwt"
+        assert result["sub"] == "user-1"
+        verify_mock.assert_called_once_with("test.jwt")
+
+
+@pytest.mark.asyncio
+async def test_verify_with_jwks_retry_on_signature_failure(jwt_bearer):
+    """_verify_with_jwks: retry when signature verification fails, then succeed."""
+    # Prepare JWKS containing our kid
+    with patch.object(
+        jwt_bearer, "get_jwks", return_value={"keys": [{"kid": "k1", "kty": "RSA"}]}
+    ):
+        with patch(
+            "src.core.auth.jwt_bearer.jwt.get_unverified_header",
+            return_value={"kid": "k1", "alg": "RS256"},
+        ):
+            with patch("src.core.auth.jwt_bearer.jwk.construct", return_value=Mock()):
+                valid_payload = {
+                    "sub": "u1",
+                    "iss": f"{jwt_bearer.supabase_url}/auth/v1",
+                    "aud": "authenticated",
+                    "exp": int((datetime.now(UTC) + timedelta(hours=1)).timestamp()),
+                    "iat": int(datetime.now(UTC).timestamp()),
+                    "role": "authenticated",
+                }
+                from jose import JWTError
+
+                with patch(
+                    "src.core.auth.jwt_bearer.jwt.decode",
+                    side_effect=[
+                        JWTError("Signature verification failed"),
+                        valid_payload,
+                    ],
+                ):
+                    result = await jwt_bearer._verify_with_jwks("token")
+                    assert result["sub"] == "u1"
+
+
+@pytest.mark.asyncio
+async def test_get_jwks_fetches_via_http(jwt_bearer):
+    """get_jwks path that exercises _fetch_jwks and caching without stubbing it out."""
+
+    # Mock AsyncClient to return a simple JWKS
+    class MockResponse:
+        def __init__(self, data):
+            self._data = data
+
+        def raise_for_status(self):  # no-op
+            return None
+
+        def json(self):
+            return self._data
+
+    class MockClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def get(self, url):  # noqa: ARG002
+            return MockResponse({"keys": []})
+
+    with patch("src.core.auth.jwt_bearer.httpx.AsyncClient", return_value=MockClient()):
+        # First call fetches
+        jwks1 = await jwt_bearer.get_jwks(force_refresh=True)
+        assert jwks1 == {"keys": []}
+        # Second call should hit cache
+        jwks2 = await jwt_bearer.get_jwks()
+        assert jwks2 == {"keys": []}

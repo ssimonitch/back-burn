@@ -103,7 +103,12 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 minversion = "8.0"
 pythonpath = ["src", "."]
-addopts = ["--cov=src", "--cov=main", "--cov-report=term-missing"]
+addopts = [
+    "--cov=src",
+    "--cov=main",
+    "--cov-report=term-missing",
+    "--cov-fail-under=80",
+]
 testpaths = ["tests"]
 
 # Poethepoet task runner configuration
