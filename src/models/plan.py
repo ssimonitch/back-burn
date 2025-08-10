@@ -12,6 +12,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .common import PaginatedResponse
 from .enums import DifficultyLevel, TrainingStyle
 
 # Shared base configuration
@@ -73,20 +74,6 @@ class PlanResponseModel(BaseModel):
     is_public: bool
     metadata: dict[str, Any]
     created_at: datetime
-
-
-# Generic pagination (can be reused across the app)
-class PaginatedResponse[T](BaseModel):
-    """Generic paginated response model."""
-
-    items: list[T]
-    total: int
-    page: int
-    per_page: int
-
-    @property
-    def has_next(self) -> bool:
-        return self.page * self.per_page < self.total
 
 
 # Type alias for plan pagination

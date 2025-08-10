@@ -2,9 +2,9 @@
 Pydantic models for API request/response validation.
 """
 
+from .common import PaginatedResponse
 from .enums import DifficultyLevel, TrainingStyle
 from .plan import (
-    PaginatedResponse,
     PlanCreateModel,
     PlanListResponseModel,
     PlanResponseModel,

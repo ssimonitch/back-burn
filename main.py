@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from jose import JWTError
 
-from src.api.endpoints import auth, plans
+from src.api.endpoints import auth, plans, workouts
 from src.core.auth import jwt_exception_handler
 from src.core.settings import settings
 
@@ -41,7 +41,7 @@ Users develop a deepening relationship with an AI companion as they log workouts
 - 🤖 **AI Chat Integration** with Google Gemini (coming in Sprint 6)
 - 📈 **Progress Tracking** and affinity scoring
 
-### Current Sprint: 3 (Plan Creation)
+### Current Sprint: 4 (Workout Logging)
 For more details, see the [project documentation](https://github.com/yourusername/slow-burn).
     """,
     version=_get_project_version(),
@@ -56,7 +56,7 @@ For more details, see the [project documentation](https://github.com/yourusernam
         },
         {
             "name": "workouts",
-            "description": "Workout session logging and tracking (coming in Sprint 4)",
+            "description": "Workout session logging and tracking",
         },
         {
             "name": "exercises",
@@ -86,6 +86,7 @@ app.add_exception_handler(JWTError, jwt_exception_handler)
 # Include routers
 app.include_router(auth.router)
 app.include_router(plans.router)
+app.include_router(workouts.router)
 
 
 def custom_openapi() -> dict[str, Any]:

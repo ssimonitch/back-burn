@@ -1,6 +1,17 @@
 {
   "components": {
     "schemas": {
+      "AssistanceType": {
+        "description": "Type of assistance used during set execution.\n\nDocuments when external help or equipment assistance was used.",
+        "enum": [
+          "none",
+          "spotter",
+          "machine_assist",
+          "band_assist"
+        ],
+        "title": "AssistanceType",
+        "type": "string"
+      },
       "DifficultyLevel": {
         "description": "Workout plan difficulty levels.\n\nUsed to categorize plans by required experience and fitness level.",
         "enum": [
@@ -9,6 +20,57 @@
           "advanced"
         ],
         "title": "DifficultyLevel",
+        "type": "string"
+      },
+      "EnhancedPaginatedWorkoutResponse": {
+        "description": "Paginated workout response with aggregate metrics.",
+        "properties": {
+          "aggregate_metrics": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "description": "Aggregate metrics for the current page (effective_volume, total_volume, etc.)",
+            "title": "Aggregate Metrics",
+            "type": "object"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WorkoutSummaryModel"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "per_page": {
+            "title": "Per Page",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "per_page"
+        ],
+        "title": "EnhancedPaginatedWorkoutResponse",
+        "type": "object"
+      },
+      "FailureType": {
+        "description": "Type of failure reached during set execution.\n\nHelps differentiate between true muscular failure and other limiting factors.",
+        "enum": [
+          "muscular",
+          "form",
+          "cardiovascular",
+          "motivation"
+        ],
+        "title": "FailureType",
         "type": "string"
       },
       "HTTPValidationError": {
@@ -23,6 +85,18 @@
         },
         "title": "HTTPValidationError",
         "type": "object"
+      },
+      "MoodRating": {
+        "description": "Mood rating scale for wellness tracking.\n\nUsed before and after workout sessions.",
+        "enum": [
+          "very_bad",
+          "bad",
+          "neutral",
+          "good",
+          "very_good"
+        ],
+        "title": "MoodRating",
+        "type": "string"
       },
       "PaginatedResponse_PlanResponseModel_": {
         "properties": {
@@ -362,6 +436,483 @@
         "title": "PlanUpdateModel",
         "type": "object"
       },
+      "RangeOfMotionQuality": {
+        "description": "Range of motion quality assessment.\n\nTracks movement quality and mobility improvements over time.",
+        "enum": [
+          "full",
+          "partial",
+          "limited",
+          "assisted"
+        ],
+        "title": "RangeOfMotionQuality",
+        "type": "string"
+      },
+      "SetCreateModel": {
+        "additionalProperties": false,
+        "description": "Model for creating a new workout set.",
+        "properties": {
+          "assistance_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AssistanceType"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Type of assistance used (none/spotter/machine_assist/band_assist)"
+          },
+          "equipment_variation": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Specific variation (e.g., 'close_grip', 'deficit', 'paused')",
+            "title": "Equipment Variation"
+          },
+          "estimated_1rm": {
+            "anyOf": [
+              {
+                "maximum": 1000.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Calculated 1RM based on weight × reps (Epley formula)",
+            "title": "Estimated 1Rm"
+          },
+          "exercise_id": {
+            "format": "uuid",
+            "title": "Exercise Id",
+            "type": "string"
+          },
+          "failure_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FailureType"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Type of failure if reached (muscular/form/cardiovascular/motivation)"
+          },
+          "form_quality": {
+            "anyOf": [
+              {
+                "maximum": 5.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Form quality: 1=poor, 2=fair, 3=good, 4=very good, 5=perfect",
+            "title": "Form Quality"
+          },
+          "intensity_percentage": {
+            "anyOf": [
+              {
+                "maximum": 200.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Percentage of 1RM used (>100% for overload/assisted work)",
+            "title": "Intensity Percentage"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "range_of_motion_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RangeOfMotionQuality"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Range of motion quality assessment"
+          },
+          "reached_failure": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether set was taken to complete failure",
+            "title": "Reached Failure"
+          },
+          "reps": {
+            "maximum": 1000.0,
+            "minimum": 0.0,
+            "title": "Reps",
+            "type": "integer"
+          },
+          "rest_period": {
+            "anyOf": [
+              {
+                "maximum": 3600.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Rest period in seconds",
+            "title": "Rest Period"
+          },
+          "rir": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Reps in Reserve (0-10)",
+            "title": "Rir"
+          },
+          "rpe": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Rate of Perceived Exertion (1-10)",
+            "title": "Rpe"
+          },
+          "set_number": {
+            "description": "Order of this set within the exercise (1st, 2nd, etc.)",
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "Set Number",
+            "type": "integer"
+          },
+          "set_type": {
+            "$ref": "#/components/schemas/SetType",
+            "default": "working",
+            "description": "Classification of set purpose - critical for volume calculations"
+          },
+          "tempo": {
+            "anyOf": [
+              {
+                "maxLength": 10,
+                "pattern": "^\\d{1,2}-\\d{1,2}-\\d{1,2}-\\d{1,2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Tempo notation (e.g., 2-0-2-0 for eccentric-pause-concentric-pause)",
+            "title": "Tempo"
+          },
+          "weight": {
+            "description": "Weight in kg (max 1000kg)",
+            "maximum": 1000.0,
+            "minimum": 0.0,
+            "title": "Weight",
+            "type": "number"
+          }
+        },
+        "required": [
+          "exercise_id",
+          "set_number",
+          "weight",
+          "reps"
+        ],
+        "title": "SetCreateModel",
+        "type": "object"
+      },
+      "SetResponseModel": {
+        "description": "Model for workout set API responses.",
+        "properties": {
+          "assistance_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AssistanceType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "equipment_variation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Equipment Variation"
+          },
+          "estimated_1rm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated 1Rm"
+          },
+          "exercise_id": {
+            "format": "uuid",
+            "title": "Exercise Id",
+            "type": "string"
+          },
+          "exercise_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Exercise name from join",
+            "title": "Exercise Name"
+          },
+          "failure_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FailureType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "form_quality": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Form Quality"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "intensity_percentage": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intensity Percentage"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "order_in_workout": {
+            "title": "Order In Workout",
+            "type": "integer"
+          },
+          "range_of_motion_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RangeOfMotionQuality"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reached_failure": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reached Failure"
+          },
+          "reps": {
+            "title": "Reps",
+            "type": "integer"
+          },
+          "rest_period": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rest Period"
+          },
+          "rir": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rir"
+          },
+          "rpe": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rpe"
+          },
+          "set_number": {
+            "title": "Set Number",
+            "type": "integer"
+          },
+          "set_type": {
+            "$ref": "#/components/schemas/SetType"
+          },
+          "tempo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tempo"
+          },
+          "volume_load": {
+            "description": "Calculated as weight * reps",
+            "title": "Volume Load",
+            "type": "number"
+          },
+          "weight": {
+            "title": "Weight",
+            "type": "number"
+          },
+          "workout_session_id": {
+            "format": "uuid",
+            "title": "Workout Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "workout_session_id",
+          "exercise_id",
+          "set_type",
+          "set_number",
+          "order_in_workout",
+          "weight",
+          "reps",
+          "rest_period",
+          "tempo",
+          "rir",
+          "rpe",
+          "form_quality",
+          "intensity_percentage",
+          "reached_failure",
+          "failure_type",
+          "estimated_1rm",
+          "equipment_variation",
+          "assistance_type",
+          "range_of_motion_quality",
+          "volume_load",
+          "notes",
+          "created_at"
+        ],
+        "title": "SetResponseModel",
+        "type": "object"
+      },
+      "SetType": {
+        "description": "Set classification for volume calculations.\n\nCritical for accurate volume tracking and progressive overload.\nOnly 'working' sets count toward effective training volume.",
+        "enum": [
+          "working",
+          "warmup",
+          "backoff",
+          "drop",
+          "cluster",
+          "rest_pause",
+          "amrap"
+        ],
+        "title": "SetType",
+        "type": "string"
+      },
+      "TrainingPhase": {
+        "description": "Training phase within a periodization cycle.\n\nTracks the current phase for proper progression and volume management.",
+        "enum": [
+          "accumulation",
+          "intensification",
+          "realization",
+          "deload",
+          "testing"
+        ],
+        "title": "TrainingPhase",
+        "type": "string"
+      },
       "TrainingStyle": {
         "description": "Training styles matching the database training_styles reference table.\n\nThese values are seeded in the database and should remain synchronized\nwith supabase/seeds/01_reference_seed.sql.",
         "enum": [
@@ -406,6 +957,812 @@
         ],
         "title": "ValidationError",
         "type": "object"
+      },
+      "WellnessRating": {
+        "description": "General wellness rating scale.\n\nUsed for energy, stress, and sleep quality tracking.",
+        "enum": [
+          "very_low",
+          "low",
+          "moderate",
+          "high",
+          "very_high"
+        ],
+        "title": "WellnessRating",
+        "type": "string"
+      },
+      "WorkoutCreateModel": {
+        "additionalProperties": false,
+        "description": "Model for creating a new workout session.",
+        "properties": {
+          "mood": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MoodRating"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Post-workout mood"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "overall_rpe": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Overall session RPE (1-10)",
+            "title": "Overall Rpe"
+          },
+          "plan_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional reference to workout plan",
+            "title": "Plan Id"
+          },
+          "post_workout_energy": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Post-workout energy level (1-10)",
+            "title": "Post Workout Energy"
+          },
+          "pre_workout_energy": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Pre-workout energy level (1-10)",
+            "title": "Pre Workout Energy"
+          },
+          "sets": {
+            "description": "List of sets performed in this workout",
+            "items": {
+              "$ref": "#/components/schemas/SetCreateModel"
+            },
+            "minItems": 1,
+            "title": "Sets",
+            "type": "array"
+          },
+          "sleep_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WellnessRating"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stress_after": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WellnessRating"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stress_before": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WellnessRating"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "training_phase": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrainingPhase"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Current periodization phase"
+          },
+          "workout_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkoutType"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Primary training stimulus of the session"
+          }
+        },
+        "required": [
+          "sets"
+        ],
+        "title": "WorkoutCreateModel",
+        "type": "object"
+      },
+      "WorkoutDetailResponseModel": {
+        "description": "Model for detailed workout session with sets and metrics.",
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "duration_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Calculated duration in minutes",
+            "title": "Duration Minutes"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "metrics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkoutMetricsModel"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Comprehensive workout metrics including effective volume and movement patterns"
+          },
+          "mood": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MoodRating"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "overall_rpe": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overall Rpe"
+          },
+          "plan_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Id"
+          },
+          "plan_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Plan name from join",
+            "title": "Plan Name"
+          },
+          "post_workout_energy": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Post Workout Energy"
+          },
+          "pre_workout_energy": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pre Workout Energy"
+          },
+          "sets": {
+            "description": "All sets performed, properly ordered by exercise and set number",
+            "items": {
+              "$ref": "#/components/schemas/SetResponseModel"
+            },
+            "title": "Sets",
+            "type": "array"
+          },
+          "sleep_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WellnessRating"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "stress_after": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WellnessRating"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stress_before": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WellnessRating"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "total_sets": {
+            "title": "Total Sets",
+            "type": "integer"
+          },
+          "total_volume": {
+            "title": "Total Volume",
+            "type": "number"
+          },
+          "training_phase": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrainingPhase"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          },
+          "workout_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkoutType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "user_id",
+          "plan_id",
+          "started_at",
+          "completed_at",
+          "notes",
+          "mood",
+          "pre_workout_energy",
+          "post_workout_energy",
+          "stress_before",
+          "stress_after",
+          "sleep_quality",
+          "workout_type",
+          "training_phase",
+          "overall_rpe",
+          "total_sets",
+          "total_volume",
+          "sets",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "WorkoutDetailResponseModel",
+        "type": "object"
+      },
+      "WorkoutMetricsModel": {
+        "description": "Model for detailed workout performance metrics.",
+        "properties": {
+          "average_intensity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Average percentage of 1RM for working sets",
+            "title": "Average Intensity"
+          },
+          "effective_volume": {
+            "description": "Total volume from working sets only (excludes warm-ups)",
+            "title": "Effective Volume",
+            "type": "number"
+          },
+          "estimated_1rm_progression": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "description": "Estimated 1RM values by exercise_id",
+            "title": "Estimated 1Rm Progression",
+            "type": "object"
+          },
+          "fatigue_index": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Fatigue score based on form quality degradation (0=fresh, 1=exhausted)",
+            "title": "Fatigue Index"
+          },
+          "total_volume": {
+            "description": "Total volume including all set types",
+            "title": "Total Volume",
+            "type": "number"
+          },
+          "volume_by_movement_pattern": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "description": "Volume distribution by movement pattern (push/pull/legs/core)",
+            "title": "Volume By Movement Pattern",
+            "type": "object"
+          },
+          "working_sets_ratio": {
+            "description": "Percentage of effective volume vs total volume (quality indicator)",
+            "title": "Working Sets Ratio",
+            "type": "number"
+          }
+        },
+        "required": [
+          "effective_volume",
+          "total_volume",
+          "working_sets_ratio"
+        ],
+        "title": "WorkoutMetricsModel",
+        "type": "object"
+      },
+      "WorkoutResponseModel": {
+        "description": "Model for workout session API responses.",
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "mood": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MoodRating"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "overall_rpe": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overall Rpe"
+          },
+          "plan_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Id"
+          },
+          "post_workout_energy": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Post Workout Energy"
+          },
+          "pre_workout_energy": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pre Workout Energy"
+          },
+          "sleep_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WellnessRating"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "stress_after": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WellnessRating"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stress_before": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WellnessRating"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "total_sets": {
+            "default": 0,
+            "description": "Total number of sets in this workout",
+            "title": "Total Sets",
+            "type": "integer"
+          },
+          "total_volume": {
+            "default": 0,
+            "description": "Total volume (sum of all volume_load)",
+            "title": "Total Volume",
+            "type": "number"
+          },
+          "training_phase": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrainingPhase"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          },
+          "workout_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkoutType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "user_id",
+          "plan_id",
+          "started_at",
+          "completed_at",
+          "notes",
+          "mood",
+          "pre_workout_energy",
+          "post_workout_energy",
+          "stress_before",
+          "stress_after",
+          "sleep_quality",
+          "workout_type",
+          "training_phase",
+          "overall_rpe",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "WorkoutResponseModel",
+        "type": "object"
+      },
+      "WorkoutSummaryModel": {
+        "description": "Model for workout session summary in list views.",
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "duration_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Minutes"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "overall_rpe": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overall Rpe"
+          },
+          "plan_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Id"
+          },
+          "plan_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Name"
+          },
+          "primary_exercises": {
+            "description": "Top 3 exercises by volume",
+            "items": {
+              "type": "string"
+            },
+            "title": "Primary Exercises",
+            "type": "array"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "total_sets": {
+            "title": "Total Sets",
+            "type": "integer"
+          },
+          "total_volume": {
+            "title": "Total Volume",
+            "type": "number"
+          },
+          "training_phase": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrainingPhase"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "workout_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkoutType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "plan_id",
+          "plan_name",
+          "started_at",
+          "completed_at",
+          "workout_type",
+          "training_phase",
+          "overall_rpe",
+          "total_sets",
+          "total_volume",
+          "duration_minutes"
+        ],
+        "title": "WorkoutSummaryModel",
+        "type": "object"
+      },
+      "WorkoutType": {
+        "description": "Workout type categorizing the primary training stimulus.\n\nUsed to track the focus of each workout session for periodization.",
+        "enum": [
+          "strength",
+          "hypertrophy",
+          "power",
+          "endurance",
+          "mixed",
+          "technique",
+          "deload"
+        ],
+        "title": "WorkoutType",
+        "type": "string"
       }
     },
     "securitySchemes": {
@@ -416,7 +1773,7 @@
     }
   },
   "info": {
-    "description": "\n## AI Fitness Companion Backend API\n\nThe Slow Burn API provides a comprehensive backend for an AI-powered fitness companion application.\nUsers develop a deepening relationship with an AI companion as they log workouts and achieve their fitness goals.\n\n### Key Features:\n- 🔐 **JWT Authentication** via Supabase\n- 💪 **Workout Plan Management** with versioning support\n- 🏋️ **Exercise Library** (coming in Sprint 5)\n- 🤖 **AI Chat Integration** with Google Gemini (coming in Sprint 6)\n- 📈 **Progress Tracking** and affinity scoring\n\n### Current Sprint: 3 (Plan Creation)\nFor more details, see the [project documentation](https://github.com/yourusername/slow-burn).\n    ",
+    "description": "\n## AI Fitness Companion Backend API\n\nThe Slow Burn API provides a comprehensive backend for an AI-powered fitness companion application.\nUsers develop a deepening relationship with an AI companion as they log workouts and achieve their fitness goals.\n\n### Key Features:\n- 🔐 **JWT Authentication** via Supabase\n- 💪 **Workout Plan Management** with versioning support\n- 🏋️ **Exercise Library** (coming in Sprint 5)\n- 🤖 **AI Chat Integration** with Google Gemini (coming in Sprint 6)\n- 📈 **Progress Tracking** and affinity scoring\n\n### Current Sprint: 4 (Workout Logging)\nFor more details, see the [project documentation](https://github.com/yourusername/slow-burn).\n    ",
     "title": "Slow Burn API",
     "version": "0.1.0"
   },
@@ -980,6 +2337,488 @@
         "summary": "Update a workout plan (creates new version)",
         "tags": [
           "plans"
+        ]
+      }
+    },
+    "/api/v1/workouts/": {
+      "get": {
+        "description": "Retrieve a paginated list of the authenticated user's workout sessions.\n\nReturns a paginated list of workout sessions filtered by the authenticated user's ID.\nWorkouts are sorted by started_at DESC to show most recent workouts first.\nEach workout includes summary statistics like total sets and volume.\n\nFiltering options:\n- Date range: Filter by workout date using start_date and end_date\n- Plan: Filter by specific workout plan using plan_id\n\nArgs:\n    page: Page number (1-indexed)\n    per_page: Number of items per page (1-100)\n    start_date: Optional start date filter (inclusive)\n    end_date: Optional end date filter (inclusive)\n    plan_id: Optional plan ID filter\n    jwt_payload: The authenticated user's JWT payload\n    repo: The workouts repository instance\n\nReturns:\n    WorkoutListResponseModel containing the workouts array and pagination metadata\n\nRaises:\n    HTTPException: If workout retrieval fails due to database errors",
+        "operationId": "get_workouts_api_v1_workouts__get",
+        "parameters": [
+          {
+            "description": "Page number (1-indexed)",
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "description": "Page number (1-indexed)",
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Number of items per page (1-100)",
+            "in": "query",
+            "name": "per_page",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "description": "Number of items per page (1-100)",
+              "exclusiveMinimum": 0,
+              "maximum": 100,
+              "title": "Per Page",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Filter workouts from this date (inclusive)",
+            "in": "query",
+            "name": "start_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter workouts from this date (inclusive)",
+              "title": "Start Date"
+            }
+          },
+          {
+            "description": "Filter workouts until this date (inclusive)",
+            "in": "query",
+            "name": "end_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter workouts until this date (inclusive)",
+              "title": "End Date"
+            }
+          },
+          {
+            "description": "Filter workouts by plan ID",
+            "in": "query",
+            "name": "plan_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter workouts by plan ID",
+              "title": "Plan Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnhancedPaginatedWorkoutResponse"
+                }
+              }
+            },
+            "description": "List of workout sessions retrieved successfully"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": "Not authenticated"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": [
+                    {
+                      "loc": [
+                        "query",
+                        "per_page"
+                      ],
+                      "msg": "ensure this value is greater than 0",
+                      "type": "value_error.number.not_gt"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": "Failed to retrieve workouts"
+                }
+              }
+            },
+            "description": "Internal server error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": "Workout listing endpoint not yet implemented"
+                }
+              }
+            },
+            "description": "Not implemented"
+          }
+        },
+        "security": [
+          {
+            "SupabaseJWTBearer": []
+          }
+        ],
+        "summary": "Get user's workout sessions",
+        "tags": [
+          "workouts"
+        ]
+      },
+      "post": {
+        "description": "Create a new workout session with associated sets.\n\nCreates a new workout session for the authenticated user with the provided details.\nEach workout must contain at least one set. The session tracks wellness metrics\nbefore and after the workout, along with detailed performance data for each set.\n\nThe workout will automatically:\n- Calculate volume_load for each set (weight * reps)\n- Set order_in_workout for sets based on submission order\n- Track timestamps for session start and completion\n- Update user's affinity score upon successful logging\n\nArgs:\n    workout_data: The workout creation data including sets\n    jwt_payload: The authenticated user's JWT payload\n    repo: The workouts repository instance\n\nReturns:\n    The created workout session with all database-generated fields\n\nRaises:\n    HTTPException: If workout creation fails due to validation or database errors",
+        "operationId": "create_workout_api_v1_workouts__post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkoutCreateModel"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkoutResponseModel"
+                }
+              }
+            },
+            "description": "Workout session created successfully"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "empty_sets": {
+                    "summary": "No sets provided",
+                    "value": {
+                      "detail": "Workout must contain at least one set"
+                    }
+                  },
+                  "invalid_rpe": {
+                    "summary": "Invalid RPE value",
+                    "value": {
+                      "detail": "RPE must be between 1 and 10"
+                    }
+                  },
+                  "invalid_tempo": {
+                    "summary": "Invalid tempo format",
+                    "value": {
+                      "detail": "Tempo must be in format X-X-X-X (e.g., 2-0-2-0)"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Invalid input data"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": "Not authenticated"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": "Plan not found or access denied"
+                }
+              }
+            },
+            "description": "Referenced plan not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": [
+                    {
+                      "loc": [
+                        "body",
+                        "sets",
+                        0,
+                        "weight"
+                      ],
+                      "msg": "ensure this value is greater than or equal to 0",
+                      "type": "value_error.number.not_ge"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": "Failed to create workout session"
+                }
+              }
+            },
+            "description": "Internal server error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": "Workout creation endpoint not yet implemented"
+                }
+              }
+            },
+            "description": "Not implemented"
+          }
+        },
+        "security": [
+          {
+            "SupabaseJWTBearer": []
+          }
+        ],
+        "summary": "Log a new workout session",
+        "tags": [
+          "workouts"
+        ]
+      }
+    },
+    "/api/v1/workouts/{workout_id}": {
+      "delete": {
+        "description": "Delete a workout session and all associated sets.\n\nPerforms a hard delete of the workout session and all its associated sets.\nOnly the workout owner can delete their workouts. This operation is\npermanent and cannot be undone.\n\nArgs:\n    workout_id: The UUID of the workout to delete\n    jwt_payload: The authenticated user's JWT payload\n    repo: The workouts repository instance\n\nReturns:\n    None (204 No Content on success)\n\nRaises:\n    HTTPException:\n        - 403 if user doesn't own the workout\n        - 404 if workout doesn't exist\n        - 500 if deletion fails due to database errors",
+        "operationId": "delete_workout_api_v1_workouts__workout_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workout_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workout Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Workout deleted successfully"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": "Not authenticated"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": "You do not have permission to delete this workout"
+                }
+              }
+            },
+            "description": "User does not own this workout"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": "Workout not found"
+                }
+              }
+            },
+            "description": "Workout not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": [
+                    {
+                      "loc": [
+                        "path",
+                        "workout_id"
+                      ],
+                      "msg": "value is not a valid uuid",
+                      "type": "type_error.uuid"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Invalid workout ID format"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": "Failed to delete workout"
+                }
+              }
+            },
+            "description": "Internal server error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": "Workout deletion endpoint not yet implemented"
+                }
+              }
+            },
+            "description": "Not implemented"
+          }
+        },
+        "security": [
+          {
+            "SupabaseJWTBearer": []
+          }
+        ],
+        "summary": "Delete a workout session",
+        "tags": [
+          "workouts"
+        ]
+      },
+      "get": {
+        "description": "Retrieve a specific workout session with all its sets.\n\nReturns the detailed workout data for the specified workout_id, including\nall sets performed, exercise information, and wellness metrics. Access is\nrestricted to the workout owner via RLS policies.\n\nThe response includes:\n- Full workout session details\n- All sets with exercise names and performance metrics\n- Calculated statistics (total volume, duration)\n- Wellness tracking data\n\nArgs:\n    workout_id: The UUID of the workout to retrieve\n    jwt_payload: The authenticated user's JWT payload\n    repo: The workouts repository instance\n\nReturns:\n    WorkoutDetailResponseModel containing the workout details with all sets\n\nRaises:\n    HTTPException:\n        - 404 if workout doesn't exist or user lacks permission\n        - 500 if retrieval fails due to database errors",
+        "operationId": "get_workout_by_id_api_v1_workouts__workout_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workout_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workout Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkoutDetailResponseModel"
+                }
+              }
+            },
+            "description": "Workout session retrieved successfully"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": "Not authenticated"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": "Workout not found"
+                }
+              }
+            },
+            "description": "Workout not found or access denied"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": [
+                    {
+                      "loc": [
+                        "path",
+                        "workout_id"
+                      ],
+                      "msg": "value is not a valid uuid",
+                      "type": "type_error.uuid"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Invalid workout ID format"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": "Failed to retrieve workout"
+                }
+              }
+            },
+            "description": "Internal server error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": "Workout retrieval endpoint not yet implemented"
+                }
+              }
+            },
+            "description": "Not implemented"
+          }
+        },
+        "security": [
+          {
+            "SupabaseJWTBearer": []
+          }
+        ],
+        "summary": "Get a specific workout session by ID",
+        "tags": [
+          "workouts"
         ]
       }
     },

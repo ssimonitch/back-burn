@@ -9,9 +9,10 @@ from fastapi.testclient import TestClient
 
 from main import app
 from src.core.auth.models import JWTPayload
-from src.core.di import get_plans_repository
+from src.core.di import get_plans_repository, get_workouts_repository
 from src.models.enums import DifficultyLevel, TrainingStyle
 from src.repositories.plans import PlansRepository
+from src.repositories.workouts import WorkoutsRepository
 
 
 @pytest.fixture(autouse=True)
@@ -216,6 +217,21 @@ def mock_plans_repo():
     finally:
         if get_plans_repository in app.dependency_overrides:
             del app.dependency_overrides[get_plans_repository]
+
+
+@pytest.fixture
+def mock_workouts_repo():
+    """Provide and override a WorkoutsRepository for endpoint tests.
+
+    Prefer this over mocking Supabase chains for clarity and stability.
+    """
+    mock_repo = MagicMock(spec=WorkoutsRepository)
+    app.dependency_overrides[get_workouts_repository] = lambda: mock_repo
+    try:
+        yield mock_repo
+    finally:
+        if get_workouts_repository in app.dependency_overrides:
+            del app.dependency_overrides[get_workouts_repository]
 
 
 # -------------------------
