@@ -310,10 +310,6 @@ class EnhancedPaginatedWorkoutResponse(PaginatedResponse[WorkoutSummaryModel]):
     )
 
 
-# Type alias for backward compatibility
-WorkoutListResponseModel = EnhancedPaginatedWorkoutResponse
-
-
 # Response model for workout history with aggregate statistics
 class WorkoutHistoryStatsModel(BaseModel):
     """Model for aggregate workout statistics over time."""

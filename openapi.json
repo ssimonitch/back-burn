@@ -2342,7 +2342,7 @@
     },
     "/api/v1/workouts/": {
       "get": {
-        "description": "Retrieve a paginated list of the authenticated user's workout sessions.\n\nReturns a paginated list of workout sessions filtered by the authenticated user's ID.\nWorkouts are sorted by started_at DESC to show most recent workouts first.\nEach workout includes summary statistics like total sets and volume.\n\nFiltering options:\n- Date range: Filter by workout date using start_date and end_date\n- Plan: Filter by specific workout plan using plan_id\n\nArgs:\n    page: Page number (1-indexed)\n    per_page: Number of items per page (1-100)\n    start_date: Optional start date filter (inclusive)\n    end_date: Optional end date filter (inclusive)\n    plan_id: Optional plan ID filter\n    jwt_payload: The authenticated user's JWT payload\n    repo: The workouts repository instance\n\nReturns:\n    WorkoutListResponseModel containing the workouts array and pagination metadata\n\nRaises:\n    HTTPException: If workout retrieval fails due to database errors",
+        "description": "Retrieve a paginated list of the authenticated user's workout sessions.\n\nReturns a paginated list of workout sessions filtered by the authenticated user's ID.\nWorkouts are sorted by started_at DESC to show most recent workouts first.\nEach workout includes summary statistics like total sets and volume, with\ndistinction between working sets and total sets for volume calculations.\n\nFiltering options:\n- Date range: Filter by workout date using date_from and date_to\n- Plan: Filter by specific workout plan using plan_id\n- Workout type: Filter by training stimulus (strength/hypertrophy/power/conditioning)\n- Training phase: Filter by periodization phase (accumulation/intensification/realization/deload)\n\nArgs:\n    page: Page number (1-indexed)\n    per_page: Number of items per page (1-100)\n    start_date: Optional start date filter (inclusive)\n    end_date: Optional end date filter (inclusive)\n    plan_id: Optional plan ID filter\n    workout_type: Optional workout type filter\n    training_phase: Optional training phase filter\n    jwt_payload: The authenticated user's JWT payload\n    repo: The workouts repository instance\n\nReturns:\n    EnhancedPaginatedWorkoutResponse containing the workouts array and pagination metadata\n\nRaises:\n    HTTPException: If workout retrieval fails due to database errors",
         "operationId": "get_workouts_api_v1_workouts__get",
         "parameters": [
           {
@@ -2375,7 +2375,7 @@
           {
             "description": "Filter workouts from this date (inclusive)",
             "in": "query",
-            "name": "start_date",
+            "name": "date_from",
             "required": false,
             "schema": {
               "anyOf": [
@@ -2388,13 +2388,13 @@
                 }
               ],
               "description": "Filter workouts from this date (inclusive)",
-              "title": "Start Date"
+              "title": "Date From"
             }
           },
           {
             "description": "Filter workouts until this date (inclusive)",
             "in": "query",
-            "name": "end_date",
+            "name": "date_to",
             "required": false,
             "schema": {
               "anyOf": [
@@ -2407,7 +2407,7 @@
                 }
               ],
               "description": "Filter workouts until this date (inclusive)",
-              "title": "End Date"
+              "title": "Date To"
             }
           },
           {
@@ -2427,6 +2427,42 @@
               ],
               "description": "Filter workouts by plan ID",
               "title": "Plan Id"
+            }
+          },
+          {
+            "description": "Filter by workout type (strength/hypertrophy/power/conditioning)",
+            "in": "query",
+            "name": "workout_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/WorkoutType"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by workout type (strength/hypertrophy/power/conditioning)",
+              "title": "Workout Type"
+            }
+          },
+          {
+            "description": "Filter by training phase (accumulation/intensification/realization/deload)",
+            "in": "query",
+            "name": "training_phase",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/TrainingPhase"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by training phase (accumulation/intensification/realization/deload)",
+              "title": "Training Phase"
             }
           }
         ],
@@ -2479,16 +2515,6 @@
               }
             },
             "description": "Internal server error"
-          },
-          "501": {
-            "content": {
-              "application/json": {
-                "example": {
-                  "detail": "Workout listing endpoint not yet implemented"
-                }
-              }
-            },
-            "description": "Not implemented"
           }
         },
         "security": [
@@ -2502,7 +2528,7 @@
         ]
       },
       "post": {
-        "description": "Create a new workout session with associated sets.\n\nCreates a new workout session for the authenticated user with the provided details.\nEach workout must contain at least one set. The session tracks wellness metrics\nbefore and after the workout, along with detailed performance data for each set.\n\nThe workout will automatically:\n- Calculate volume_load for each set (weight * reps)\n- Set order_in_workout for sets based on submission order\n- Track timestamps for session start and completion\n- Update user's affinity score upon successful logging\n\nArgs:\n    workout_data: The workout creation data including sets\n    jwt_payload: The authenticated user's JWT payload\n    repo: The workouts repository instance\n\nReturns:\n    The created workout session with all database-generated fields\n\nRaises:\n    HTTPException: If workout creation fails due to validation or database errors",
+        "description": "Create a new workout session with associated sets.\n\nCreates a new workout session for the authenticated user with comprehensive\npowerbuilding performance tracking. Each workout must contain at least one set.\n\nSupports detailed tracking of:\n- Performance metrics: weight, reps, RIR, RPE, tempo, form quality\n- Wellness indicators: mood, energy levels, stress, sleep quality\n- Training context: workout type, training phase, overall session RPE\n- Advanced metrics: intensity percentage, 1RM estimates, failure tracking\n- Equipment variations and assistance types\n\nThe workout will automatically:\n- Calculate volume_load for each set (weight * reps)\n- Distinguish between working sets and warm-up sets for effective volume\n- Set order_in_workout for sets based on submission order\n- Track timestamps for session start and completion\n- Update user's affinity score upon successful logging\n\nArgs:\n    workout_data: The workout creation data including sets\n    jwt_payload: The authenticated user's JWT payload\n    repo: The workouts repository instance\n\nReturns:\n    The created workout session with all database-generated fields\n\nRaises:\n    HTTPException: If workout creation fails due to validation or database errors",
         "operationId": "create_workout_api_v1_workouts__post",
         "requestBody": {
           "content": {
@@ -2602,16 +2628,6 @@
               }
             },
             "description": "Internal server error"
-          },
-          "501": {
-            "content": {
-              "application/json": {
-                "example": {
-                  "detail": "Workout creation endpoint not yet implemented"
-                }
-              }
-            },
-            "description": "Not implemented"
           }
         },
         "security": [
@@ -2703,16 +2719,6 @@
               }
             },
             "description": "Internal server error"
-          },
-          "501": {
-            "content": {
-              "application/json": {
-                "example": {
-                  "detail": "Workout deletion endpoint not yet implemented"
-                }
-              }
-            },
-            "description": "Not implemented"
           }
         },
         "security": [
@@ -2799,16 +2805,6 @@
               }
             },
             "description": "Internal server error"
-          },
-          "501": {
-            "content": {
-              "application/json": {
-                "example": {
-                  "detail": "Workout retrieval endpoint not yet implemented"
-                }
-              }
-            },
-            "description": "Not implemented"
           }
         },
         "security": [

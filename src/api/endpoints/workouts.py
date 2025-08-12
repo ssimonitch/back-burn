@@ -14,10 +14,11 @@ from pydantic import ValidationError
 
 from src.core.auth import JWTPayload, require_auth
 from src.core.di import get_workouts_repository
+from src.models.enums import TrainingPhase, WorkoutType
 from src.models.workout import (
+    EnhancedPaginatedWorkoutResponse,
     WorkoutCreateModel,
     WorkoutDetailResponseModel,
-    WorkoutListResponseModel,
     WorkoutResponseModel,
     WorkoutSummaryModel,
 )
@@ -99,16 +100,6 @@ router = APIRouter(prefix="/api/v1/workouts", tags=["workouts"])
                 }
             },
         },
-        501: {
-            "description": "Not implemented",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "detail": "Workout creation endpoint not yet implemented"
-                    }
-                }
-            },
-        },
     },
 )
 async def create_workout(
@@ -119,12 +110,19 @@ async def create_workout(
     """
     Create a new workout session with associated sets.
 
-    Creates a new workout session for the authenticated user with the provided details.
-    Each workout must contain at least one set. The session tracks wellness metrics
-    before and after the workout, along with detailed performance data for each set.
+    Creates a new workout session for the authenticated user with comprehensive
+    powerbuilding performance tracking. Each workout must contain at least one set.
+
+    Supports detailed tracking of:
+    - Performance metrics: weight, reps, RIR, RPE, tempo, form quality
+    - Wellness indicators: mood, energy levels, stress, sleep quality
+    - Training context: workout type, training phase, overall session RPE
+    - Advanced metrics: intensity percentage, 1RM estimates, failure tracking
+    - Equipment variations and assistance types
 
     The workout will automatically:
     - Calculate volume_load for each set (weight * reps)
+    - Distinguish between working sets and warm-up sets for effective volume
     - Set order_in_workout for sets based on submission order
     - Track timestamps for session start and completion
     - Update user's affinity score upon successful logging
@@ -150,7 +148,7 @@ async def create_workout(
 
         # If plan_id is provided, verify it exists and user has access
         if workout_data.plan_id:
-            plan_exists = await repo.verify_plan_access(
+            plan_exists = repo.verify_plan_access(
                 workout_data.plan_id, jwt_payload.user_id
             )
             if not plan_exists:
@@ -160,21 +158,15 @@ async def create_workout(
                 )
 
         # Create workout session with sets via repository
-        created_workout = await repo.create_with_sets(
+        created_workout = repo.create_with_sets(
             jwt_payload.user_id, workout_data.model_dump()
         )
 
         # Update user's affinity score (Sprint 7 requirement)
-        await repo.increment_affinity_score(jwt_payload.user_id)
+        repo.increment_affinity_score(jwt_payload.user_id)
 
         return WorkoutResponseModel(**created_workout)
 
-    except NotImplementedError:
-        # Return 501 for unimplemented repository methods
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="Workout creation endpoint not yet implemented",
-        )
     except HTTPException:
         # Re-raise HTTP exceptions as-is
         raise
@@ -244,13 +236,13 @@ async def create_workout(
 
 @router.get(
     "/",
-    response_model=WorkoutListResponseModel,
+    response_model=EnhancedPaginatedWorkoutResponse,
     status_code=status.HTTP_200_OK,
     summary="Get user's workout sessions",
     responses={
         200: {
             "description": "List of workout sessions retrieved successfully",
-            "model": WorkoutListResponseModel,
+            "model": EnhancedPaginatedWorkoutResponse,
         },
         401: {
             "description": "Authentication required",
@@ -282,16 +274,6 @@ async def create_workout(
                 }
             },
         },
-        501: {
-            "description": "Not implemented",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "detail": "Workout listing endpoint not yet implemented"
-                    }
-                }
-            },
-        },
     },
 )
 async def get_workouts(
@@ -308,29 +290,42 @@ async def get_workouts(
     ),
     start_date: date | None = Query(
         default=None,
+        alias="date_from",
         description="Filter workouts from this date (inclusive)",
     ),
     end_date: date | None = Query(
         default=None,
+        alias="date_to",
         description="Filter workouts until this date (inclusive)",
     ),
     plan_id: UUID | None = Query(
         default=None,
         description="Filter workouts by plan ID",
     ),
+    workout_type: WorkoutType | None = Query(
+        default=None,
+        description="Filter by workout type (strength/hypertrophy/power/conditioning)",
+    ),
+    training_phase: TrainingPhase | None = Query(
+        default=None,
+        description="Filter by training phase (accumulation/intensification/realization/deload)",
+    ),
     jwt_payload: JWTPayload = Depends(require_auth),
     repo: WorkoutsRepository = Depends(get_workouts_repository),
-) -> WorkoutListResponseModel:
+) -> EnhancedPaginatedWorkoutResponse:
     """
     Retrieve a paginated list of the authenticated user's workout sessions.
 
     Returns a paginated list of workout sessions filtered by the authenticated user's ID.
     Workouts are sorted by started_at DESC to show most recent workouts first.
-    Each workout includes summary statistics like total sets and volume.
+    Each workout includes summary statistics like total sets and volume, with
+    distinction between working sets and total sets for volume calculations.
 
     Filtering options:
-    - Date range: Filter by workout date using start_date and end_date
+    - Date range: Filter by workout date using date_from and date_to
     - Plan: Filter by specific workout plan using plan_id
+    - Workout type: Filter by training stimulus (strength/hypertrophy/power/conditioning)
+    - Training phase: Filter by periodization phase (accumulation/intensification/realization/deload)
 
     Args:
         page: Page number (1-indexed)
@@ -338,11 +333,13 @@ async def get_workouts(
         start_date: Optional start date filter (inclusive)
         end_date: Optional end date filter (inclusive)
         plan_id: Optional plan ID filter
+        workout_type: Optional workout type filter
+        training_phase: Optional training phase filter
         jwt_payload: The authenticated user's JWT payload
         repo: The workouts repository instance
 
     Returns:
-        WorkoutListResponseModel containing the workouts array and pagination metadata
+        EnhancedPaginatedWorkoutResponse containing the workouts array and pagination metadata
 
     Raises:
         HTTPException: If workout retrieval fails due to database errors
@@ -359,32 +356,28 @@ async def get_workouts(
         offset = (page - 1) * per_page
 
         # Retrieve workouts via repository
-        workouts, total_count = await repo.list(
+        workouts, total_count = repo.list(
             user_id=jwt_payload.user_id,
             limit=per_page,
             offset=offset,
             start_date=start_date,
             end_date=end_date,
             plan_id=plan_id,
+            workout_type=workout_type.value if workout_type else None,
+            training_phase=training_phase.value if training_phase else None,
         )
 
         # Convert workout data to response models
         workout_models = [WorkoutSummaryModel(**workout) for workout in workouts]
 
         # Return the paginated response
-        return WorkoutListResponseModel(
+        return EnhancedPaginatedWorkoutResponse(
             items=workout_models,
             total=total_count,
             page=page,
             per_page=per_page,
         )
 
-    except NotImplementedError:
-        # Return 501 for unimplemented repository methods
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="Workout listing endpoint not yet implemented",
-        )
     except HTTPException:
         # Re-raise HTTP exceptions as-is
         raise
@@ -456,16 +449,6 @@ async def get_workouts(
                 }
             },
         },
-        501: {
-            "description": "Not implemented",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "detail": "Workout retrieval endpoint not yet implemented"
-                    }
-                }
-            },
-        },
     },
 )
 async def get_workout_by_id(
@@ -501,7 +484,7 @@ async def get_workout_by_id(
     """
     try:
         # Retrieve workout with sets via repository
-        workout = await repo.get_with_sets(workout_id, jwt_payload.user_id)
+        workout = repo.get_with_sets(workout_id, jwt_payload.user_id)
 
         if not workout:
             raise HTTPException(
@@ -512,12 +495,6 @@ async def get_workout_by_id(
         # Return the workout data
         return WorkoutDetailResponseModel(**workout)
 
-    except NotImplementedError:
-        # Return 501 for unimplemented repository methods
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="Workout retrieval endpoint not yet implemented",
-        )
     except HTTPException:
         # Re-raise HTTP exceptions as-is
         raise
@@ -595,16 +572,6 @@ async def get_workout_by_id(
                 "application/json": {"example": {"detail": "Failed to delete workout"}}
             },
         },
-        501: {
-            "description": "Not implemented",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "detail": "Workout deletion endpoint not yet implemented"
-                    }
-                }
-            },
-        },
     },
 )
 async def delete_workout(
@@ -635,7 +602,7 @@ async def delete_workout(
     """
     try:
         # Check if workout exists and user owns it
-        workout = await repo.get_basic(workout_id)
+        workout = repo.get_basic(workout_id)
 
         if not workout:
             raise HTTPException(
@@ -651,7 +618,7 @@ async def delete_workout(
             )
 
         # Delete the workout (sets will cascade delete)
-        success = await repo.delete(workout_id)
+        success = repo.delete(workout_id)
 
         if not success:
             raise HTTPException(
@@ -662,12 +629,6 @@ async def delete_workout(
         # Return 204 No Content on successful deletion
         return None
 
-    except NotImplementedError:
-        # Return 501 for unimplemented repository methods
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="Workout deletion endpoint not yet implemented",
-        )
     except HTTPException:
         # Re-raise HTTP exceptions as-is
         raise
