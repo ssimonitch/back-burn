@@ -9,6 +9,7 @@ from datetime import UTC, date, datetime
 from typing import Any, Protocol, TypedDict
 from uuid import UUID
 
+from src.services.workout_metrics import WorkoutMetricsService
 from supabase import Client
 
 
@@ -251,16 +252,17 @@ class SupabaseWorkoutsRepository:
             workout_session = session_response.data[0]
             workout_id = workout_session["id"]
 
-            # Prepare sets data with calculated fields
-            total_volume = 0.0
-            sets_to_insert = []
+            # Use service to calculate metrics
+            metrics_service = WorkoutMetricsService()
+            session_metrics = metrics_service.calculate_session_metrics(sets_data)
+            total_volume = session_metrics["total_volume"]
 
+            # Prepare sets data for database insertion
+            sets_to_insert = []
             for set_data in sets_data:
-                # Calculate volume for this set
+                # Extract weight and reps for DB insertion
                 weight = float(set_data.get("weight", 0))
-                reps = int(set_data.get("reps", 0))
-                volume = weight * reps
-                total_volume += volume
+                reps = int(set_data.get("reps", 0))  # Cast to int for DB column type
 
                 # Map field names from API model to DB columns
                 set_row = {
@@ -315,7 +317,7 @@ class SupabaseWorkoutsRepository:
             # Update workout session with calculated totals
             update_data = {
                 "total_volume": total_volume,
-                "total_sets": len(sets_to_insert),
+                "total_sets": session_metrics["total_sets"],
                 "completed_at": datetime.now(UTC).isoformat(),
             }
             update_response = (
@@ -465,8 +467,6 @@ class SupabaseWorkoutsRepository:
             # Process sets to add calculated fields and exercise names
             processed_sets = []
             order_in_workout = 1
-            effective_volume = 0.0
-            total_volume = 0.0
 
             for set_data in sets:
                 # Extract exercise name from join
@@ -477,12 +477,6 @@ class SupabaseWorkoutsRepository:
                 # Add order_in_workout
                 set_data["order_in_workout"] = order_in_workout
                 order_in_workout += 1
-
-                # Calculate volumes
-                volume = float(set_data.get("volume_load", 0))
-                total_volume += volume
-                if set_data.get("set_type") == "working":
-                    effective_volume += volume
 
                 # Map rest_taken_seconds to rest_period for API compatibility
                 if rest_seconds := set_data.get("rest_taken_seconds"):
@@ -503,14 +497,10 @@ class SupabaseWorkoutsRepository:
                 duration = completed - started
                 workout["duration_minutes"] = int(duration.total_seconds() / 60)
 
-            # Add metrics
-            workout["metrics"] = {
-                "effective_volume": effective_volume,
-                "total_volume": total_volume,
-                "working_sets_ratio": (
-                    effective_volume / total_volume if total_volume > 0 else 0
-                ),
-            }
+            # Use service to calculate detailed metrics
+            metrics_service = WorkoutMetricsService()
+            detail_metrics = metrics_service.calculate_detail_metrics(sets)
+            workout["metrics"] = detail_metrics
 
             # Extract wellness fields from metadata if present
             if metadata := workout.get("metadata"):

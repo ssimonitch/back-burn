@@ -156,20 +156,20 @@ class SetResponseModel(BaseModel):
     order_in_workout: int
     weight: float
     reps: int
-    rest_period: int | None
-    tempo: str | None
-    rir: int | None
-    rpe: int | None
-    form_quality: int | None
-    intensity_percentage: float | None
-    reached_failure: bool | None
-    failure_type: FailureType | None
-    estimated_1rm: float | None
-    equipment_variation: str | None
-    assistance_type: AssistanceType | None
-    range_of_motion_quality: RangeOfMotionQuality | None
+    rest_period: int | None = None
+    tempo: str | None = None
+    rir: int | None = None
+    rpe: int | None = None
+    form_quality: int | None = None
+    intensity_percentage: float | None = None
+    reached_failure: bool | None = None
+    failure_type: FailureType | None = None
+    estimated_1rm: float | None = None
+    equipment_variation: str | None = None
+    assistance_type: AssistanceType | None = None
+    range_of_motion_quality: RangeOfMotionQuality | None = None
     volume_load: float = Field(description="Calculated as weight * reps")
-    notes: str | None
+    notes: str | None = None
     created_at: datetime
 
 
@@ -225,15 +225,15 @@ class WorkoutResponseModel(BaseModel):
     started_at: datetime
     completed_at: datetime | None
     notes: str | None
-    mood: MoodRating | None
-    pre_workout_energy: int | None
-    post_workout_energy: int | None
-    stress_before: WellnessRating | None
-    stress_after: WellnessRating | None
-    sleep_quality: WellnessRating | None
-    workout_type: WorkoutType | None
-    training_phase: TrainingPhase | None
-    overall_rpe: int | None
+    mood: MoodRating | None = None
+    pre_workout_energy: int | None = None
+    post_workout_energy: int | None = None
+    stress_before: WellnessRating | None = None
+    stress_after: WellnessRating | None = None
+    sleep_quality: WellnessRating | None = None
+    workout_type: WorkoutType | None = None
+    training_phase: TrainingPhase | None = None
+    overall_rpe: int | None = None
     total_sets: int = Field(0, description="Total number of sets in this workout")
     total_volume: float = Field(0, description="Total volume (sum of all volume_load)")
     created_at: datetime
@@ -252,15 +252,15 @@ class WorkoutDetailResponseModel(BaseModel):
     started_at: datetime
     completed_at: datetime | None
     notes: str | None
-    mood: MoodRating | None
-    pre_workout_energy: int | None
-    post_workout_energy: int | None
-    stress_before: WellnessRating | None
-    stress_after: WellnessRating | None
-    sleep_quality: WellnessRating | None
-    workout_type: WorkoutType | None
-    training_phase: TrainingPhase | None
-    overall_rpe: int | None
+    mood: MoodRating | None = None
+    pre_workout_energy: int | None = None
+    post_workout_energy: int | None = None
+    stress_before: WellnessRating | None = None
+    stress_after: WellnessRating | None = None
+    sleep_quality: WellnessRating | None = None
+    workout_type: WorkoutType | None = None
+    training_phase: TrainingPhase | None = None
+    overall_rpe: int | None = None
     total_sets: int
     total_volume: float
     duration_minutes: int | None = Field(
@@ -288,9 +288,9 @@ class WorkoutSummaryModel(BaseModel):
     plan_name: str | None
     started_at: datetime
     completed_at: datetime | None
-    workout_type: WorkoutType | None
-    training_phase: TrainingPhase | None
-    overall_rpe: int | None
+    workout_type: WorkoutType | None = None
+    training_phase: TrainingPhase | None = None
+    overall_rpe: int | None = None
     total_sets: int
     total_volume: float
     duration_minutes: int | None

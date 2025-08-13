@@ -20,6 +20,9 @@ This document provides patterns and strategies for coordinating multiple special
 ### CRITICAL: Always Use Task Tool for Delegation
 When orchestrating agents, invoke them with the Task tool. Delegate to specialized agents; do not implement inside orchestration steps.
 
+### CRITICAL: Always use "ultrathink" with agents using the Sonnet model
+When invoking agents configured with the Sonnet model, include the phrase "ultrathink" in the prompt to ensure subagents take enough time to think about the task.
+
 ### 1. Sequential Implementation Pattern (Backend)
 For features where each phase depends on the previous.
 
