@@ -166,7 +166,7 @@ class WorkoutsRepository(Protocol):
         """
         ...
 
-    def verify_plan_access(self, plan_id: UUID, user_id: str) -> bool:
+    def verify_plan_access(self, plan_id: UUID, user_id: str) -> bool | str:
         """Verify user has access to a plan.
 
         Args:
@@ -174,7 +174,9 @@ class WorkoutsRepository(Protocol):
             user_id: The user to verify access for
 
         Returns:
-            True if user has access, False otherwise
+            True if user has access
+            "deleted" if plan exists but is soft-deleted
+            False if plan doesn't exist or user lacks access
         """
         ...
 
@@ -207,6 +209,10 @@ class SupabaseWorkoutsRepository:
 
         Implements transactional creation of workout session and all sets.
         Handles wellness fields in metadata and calculates aggregates.
+
+        Note: Task 9a recommends a database unique constraint on
+        (workout_session_id, exercise_id, set_number) to enforce set_number
+        uniqueness at the database level. Currently enforced at API level.
         """
         try:
             # Extract sets from workout data
@@ -563,26 +569,35 @@ class SupabaseWorkoutsRepository:
         except Exception as e:
             raise e
 
-    def verify_plan_access(self, plan_id: UUID, user_id: str) -> bool:
+    def verify_plan_access(self, plan_id: UUID, user_id: str) -> bool | str:
         """Verify user has access to a plan.
 
-        User has access if they own the plan or it's public.
+        User has access if they own the plan or it's public and not deleted.
+
+        Returns:
+            True if user has access
+            "deleted" if plan exists but is soft-deleted
+            False if plan doesn't exist or user lacks access
         """
         try:
-            # Query for plans that match ALL these conditions:
-            # 1. Has the specified plan_id
-            # 2. Is not deleted (deleted_at is null)
-            # 3. AND (user owns it OR it's public)
-            response = (
+            # First check if plan exists at all (regardless of deleted status)
+            exists_response = (
                 self.client.table("plans")
-                .select("id")
+                .select("id, deleted_at")
                 .eq("id", str(plan_id))
-                .is_("deleted_at", "null")
                 .or_(f"user_id.eq.{user_id},is_public.eq.true")
                 .execute()
             )
 
-            return bool(response.data)
+            if not exists_response.data:
+                return False  # Plan doesn't exist or user lacks access
+
+            # Check if the plan is soft-deleted
+            plan = exists_response.data[0]
+            if plan.get("deleted_at") is not None:
+                return "deleted"  # Plan exists but is soft-deleted
+
+            return True  # Plan exists and is accessible
 
         except Exception as e:
             raise e

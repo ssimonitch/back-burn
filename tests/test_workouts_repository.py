@@ -208,8 +208,8 @@ def test_verify_plan_access(repo, mock_client):
     plan_id = uuid4()
     user_id = str(uuid4())
 
-    mock_client.table.return_value.select.return_value.eq.return_value.is_.return_value.or_.return_value.execute.return_value.data = [
-        {"id": str(plan_id)}
+    mock_client.table.return_value.select.return_value.eq.return_value.or_.return_value.execute.return_value.data = [
+        {"id": str(plan_id), "deleted_at": None}
     ]
 
     # Act

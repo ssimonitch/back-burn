@@ -58,6 +58,12 @@ router = APIRouter(prefix="/api/v1/workouts", tags=["workouts"])
                                 "detail": "Tempo must be in format X-X-X-X (e.g., 2-0-2-0)"
                             },
                         },
+                        "duplicate_set_number": {
+                            "summary": "Duplicate set number for exercise",
+                            "value": {
+                                "detail": "Duplicate set_number 2 for exercise_id 123e4567-e89b-12d3-a456-426614174000. Each exercise must have unique set numbers starting from 1."
+                            },
+                        },
                     }
                 }
             },
@@ -146,12 +152,38 @@ async def create_workout(
                 detail="Workout must contain at least one set",
             )
 
+        # Task 9a: Validate set_number uniqueness per exercise_id
+        # For each exercise, ensure set_numbers are unique (already ≥1 via Field constraint)
+        exercise_set_numbers: dict[UUID, set[int]] = {}
+        for idx, workout_set in enumerate(workout_data.sets):
+            exercise_id = workout_set.exercise_id
+            set_number = workout_set.set_number
+
+            if exercise_id not in exercise_set_numbers:
+                exercise_set_numbers[exercise_id] = set()
+
+            if set_number in exercise_set_numbers[exercise_id]:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        f"Duplicate set_number {set_number} for exercise_id {exercise_id}. "
+                        f"Each exercise must have unique set numbers starting from 1."
+                    ),
+                )
+
+            exercise_set_numbers[exercise_id].add(set_number)
+
         # If plan_id is provided, verify it exists and user has access
         if workout_data.plan_id:
-            plan_exists = repo.verify_plan_access(
+            plan_access = repo.verify_plan_access(
                 workout_data.plan_id, jwt_payload.user_id
             )
-            if not plan_exists:
+            if plan_access == "deleted":
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Plan has been deleted and cannot be used for new workouts",
+                )
+            elif not plan_access:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Plan not found or access denied",

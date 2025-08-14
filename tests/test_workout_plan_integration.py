@@ -27,23 +27,24 @@ class TestPlanAccessVerification:
         plan_id = uuid4()
         other_user_id = str(uuid4())  # Testing as non-owner
 
-        # Mock response - deleted public plan
-        mock_supabase_client.table.return_value.select.return_value.eq.return_value.is_.return_value.or_.return_value.execute.return_value.data = []
+        # Mock response - plan exists but is deleted
+        mock_supabase_client.table.return_value.select.return_value.eq.return_value.or_.return_value.execute.return_value.data = [
+            {"id": str(plan_id), "deleted_at": "2025-01-01T00:00:00Z"}
+        ]
 
         # Act - Try to access as different user
         result = repo.verify_plan_access(plan_id, other_user_id)
 
-        # Assert - Should not be accessible
-        assert result is False
+        # Assert - Should return "deleted"
+        assert result == "deleted"
 
         # Verify the query was constructed correctly
         mock_supabase_client.table.assert_called_with("plans")
-        mock_supabase_client.table.return_value.select.assert_called_with("id")
+        mock_supabase_client.table.return_value.select.assert_called_with(
+            "id, deleted_at"
+        )
         mock_supabase_client.table.return_value.select.return_value.eq.assert_called_with(
             "id", str(plan_id)
-        )
-        mock_supabase_client.table.return_value.select.return_value.eq.return_value.is_.assert_called_with(
-            "deleted_at", "null"
         )
 
     def test_public_plan_accessible_to_non_owner(self, repo, mock_supabase_client):
@@ -53,8 +54,8 @@ class TestPlanAccessVerification:
         other_user_id = str(uuid4())  # Non-owner accessing public plan
 
         # Mock response - public plan exists and is not deleted
-        mock_supabase_client.table.return_value.select.return_value.eq.return_value.is_.return_value.or_.return_value.execute.return_value.data = [
-            {"id": str(plan_id)}
+        mock_supabase_client.table.return_value.select.return_value.eq.return_value.or_.return_value.execute.return_value.data = [
+            {"id": str(plan_id), "deleted_at": None}
         ]
 
         # Act - Access as different user
@@ -64,7 +65,7 @@ class TestPlanAccessVerification:
         assert result is True
 
         # Verify OR clause includes both user_id and is_public checks
-        or_call = mock_supabase_client.table.return_value.select.return_value.eq.return_value.is_.return_value.or_.call_args
+        or_call = mock_supabase_client.table.return_value.select.return_value.eq.return_value.or_.call_args
         assert f"user_id.eq.{other_user_id}" in or_call[0][0]
         assert "is_public.eq.true" in or_call[0][0]
 
@@ -76,8 +77,8 @@ class TestPlanAccessVerification:
         other_user_id = str(uuid4())
 
         # Test 1: Owner can access their private plan
-        mock_supabase_client.table.return_value.select.return_value.eq.return_value.is_.return_value.or_.return_value.execute.return_value.data = [
-            {"id": str(plan_id)}
+        mock_supabase_client.table.return_value.select.return_value.eq.return_value.or_.return_value.execute.return_value.data = [
+            {"id": str(plan_id), "deleted_at": None}
         ]
 
         result_owner = repo.verify_plan_access(plan_id, owner_id)
@@ -85,7 +86,7 @@ class TestPlanAccessVerification:
 
         # Test 2: Non-owner cannot access private plan
         # Mock empty response for non-owner
-        mock_supabase_client.table.return_value.select.return_value.eq.return_value.is_.return_value.or_.return_value.execute.return_value.data = []
+        mock_supabase_client.table.return_value.select.return_value.eq.return_value.or_.return_value.execute.return_value.data = []
 
         result_other = repo.verify_plan_access(plan_id, other_user_id)
         assert result_other is False
@@ -98,19 +99,16 @@ class TestPlanAccessVerification:
         plan_id = uuid4()
         owner_id = str(uuid4())
 
-        # Mock response - no results (plan is deleted)
-        mock_supabase_client.table.return_value.select.return_value.eq.return_value.is_.return_value.or_.return_value.execute.return_value.data = []
+        # Mock response - plan exists but is deleted
+        mock_supabase_client.table.return_value.select.return_value.eq.return_value.or_.return_value.execute.return_value.data = [
+            {"id": str(plan_id), "deleted_at": "2025-01-01T00:00:00Z"}
+        ]
 
         # Act - Try to access as owner
         result = repo.verify_plan_access(plan_id, owner_id)
 
-        # Assert - Should not be accessible even to owner
-        assert result is False
-
-        # Verify deleted_at check is applied
-        mock_supabase_client.table.return_value.select.return_value.eq.return_value.is_.assert_called_with(
-            "deleted_at", "null"
-        )
+        # Assert - Should return "deleted"
+        assert result == "deleted"
 
     def test_nonexistent_plan_not_accessible(self, repo, mock_supabase_client):
         """Verify that a non-existent plan cannot be accessed."""
@@ -119,7 +117,7 @@ class TestPlanAccessVerification:
         user_id = str(uuid4())
 
         # Mock response - empty (plan doesn't exist)
-        mock_supabase_client.table.return_value.select.return_value.eq.return_value.is_.return_value.or_.return_value.execute.return_value.data = []
+        mock_supabase_client.table.return_value.select.return_value.eq.return_value.or_.return_value.execute.return_value.data = []
 
         # Act
         result = repo.verify_plan_access(plan_id, user_id)
@@ -138,9 +136,10 @@ class TestPlanAccessVerification:
         mock_supabase_client.table.return_value = mock_chain
         mock_chain.select.return_value = mock_chain
         mock_chain.eq.return_value = mock_chain
-        mock_chain.is_.return_value = mock_chain
         mock_chain.or_.return_value = mock_chain
-        mock_chain.execute.return_value.data = [{"id": str(plan_id)}]
+        mock_chain.execute.return_value.data = [
+            {"id": str(plan_id), "deleted_at": None}
+        ]
 
         # Act
         result = repo.verify_plan_access(plan_id, user_id)
@@ -149,10 +148,9 @@ class TestPlanAccessVerification:
         assert result is True
 
         # Check each part of the query
-        mock_supabase_client.table.assert_called_once_with("plans")
-        mock_chain.select.assert_called_once_with("id")
-        mock_chain.eq.assert_called_once_with("id", str(plan_id))
-        mock_chain.is_.assert_called_once_with("deleted_at", "null")
+        mock_supabase_client.table.assert_called_with("plans")
+        mock_chain.select.assert_called_with("id, deleted_at")
+        mock_chain.eq.assert_called_with("id", str(plan_id))
 
         # Check the OR clause structure
         or_call = mock_chain.or_.call_args[0][0]
