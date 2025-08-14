@@ -868,20 +868,7 @@
           "order_in_workout",
           "weight",
           "reps",
-          "rest_period",
-          "tempo",
-          "rir",
-          "rpe",
-          "form_quality",
-          "intensity_percentage",
-          "reached_failure",
-          "failure_type",
-          "estimated_1rm",
-          "equipment_variation",
-          "assistance_type",
-          "range_of_motion_quality",
           "volume_load",
-          "notes",
           "created_at"
         ],
         "title": "SetResponseModel",
@@ -1342,15 +1329,6 @@
           "started_at",
           "completed_at",
           "notes",
-          "mood",
-          "pre_workout_energy",
-          "post_workout_energy",
-          "stress_before",
-          "stress_after",
-          "sleep_quality",
-          "workout_type",
-          "training_phase",
-          "overall_rpe",
           "total_sets",
           "total_volume",
           "sets",
@@ -1612,15 +1590,6 @@
           "started_at",
           "completed_at",
           "notes",
-          "mood",
-          "pre_workout_energy",
-          "post_workout_energy",
-          "stress_before",
-          "stress_after",
-          "sleep_quality",
-          "workout_type",
-          "training_phase",
-          "overall_rpe",
           "created_at",
           "updated_at"
         ],
@@ -1740,9 +1709,6 @@
           "plan_name",
           "started_at",
           "completed_at",
-          "workout_type",
-          "training_phase",
-          "overall_rpe",
           "total_sets",
           "total_volume",
           "duration_minutes"
@@ -2555,6 +2521,12 @@
             "content": {
               "application/json": {
                 "examples": {
+                  "duplicate_set_number": {
+                    "summary": "Duplicate set number for exercise",
+                    "value": {
+                      "detail": "Duplicate set_number 2 for exercise_id 123e4567-e89b-12d3-a456-426614174000. Each exercise must have unique set numbers starting from 1."
+                    }
+                  },
                   "empty_sets": {
                     "summary": "No sets provided",
                     "value": {

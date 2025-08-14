@@ -1,42 +1,231 @@
-# Plan API Documentation
+# API Documentation
 
-This document provides detailed information about the Plan API endpoints in the Slow Burn backend.
+This document provides detailed information about the Slow Burn backend API endpoints.
 
-When running locally with `uv run poe dev`, these endpoints are available at the above URLs.
+When running locally with `uv run poe dev`, these endpoints are available at `http://localhost:8000`.
 
 ## Authentication
 
-All plan endpoints (except GET /plans/{plan_id} for public plans) require JWT authentication. Include the JWT token in the Authorization header:
+All API endpoints (except public endpoints) require JWT authentication. Include the JWT token in the Authorization header:
 
 ```
 Authorization: Bearer <your-jwt-token>
 ```
 
-### Authentication model
+### Authentication Model
 
-- Global Bearer auth is required for all endpoints unless explicitly disabled per operation in the OpenAPI schema.
-- Public endpoints (no auth required): `/`, `/health`, `/api/v1/auth/public`.
+- Global Bearer auth is required for all endpoints unless explicitly disabled per operation in the OpenAPI schema
+- Public endpoints (no auth required): `/`, `/health`, `/api/v1/auth/public`
+- Protected endpoints: All plan and workout endpoints require authentication
 
-## Plan Endpoints
+## Using the OpenAPI Contract
 
-### Using the OpenAPI Contract
+The `openapi.json` at the repo root is the single source of truth for request/response shapes, authentication, and pagination.
 
-- `openapi.json` at the repo root is the single source of truth for request/response shapes, authentication, and pagination.
-- Common commands:
-  ```bash
-  uv run poe generate-openapi   # Generate schema
-  uv run poe verify-openapi     # Verify schema is current (validates if validator is installed)
-  uv run poe publish-openapi    # Copy schema to ../frontend/openapi.json
-  ```
-- The schema includes a `servers` block for local base URL; override in clients as needed for staging/prod.
+### Common Commands
 
-### Client generation
+```bash
+uv run poe generate-openapi   # Generate schema from code
+uv run poe verify-openapi     # Verify schema is current
+uv run poe publish-openapi    # Copy schema to ../frontend/openapi.json
+```
+
+### Client Generation
 
 You can generate a typed client from the schema. Example (TypeScript):
 
 ```bash
 npx openapi-typescript-codegen --input ../backend/openapi.json --output src/generated --client axios
 ```
+
+## Workout Endpoints
+
+### POST /api/v1/workouts
+
+Create a new workout session with associated sets.
+
+**Request Body:**
+```json
+{
+  "plan_id": "123e4567-e89b-12d3-a456-426614174000",  // Optional
+  "started_at": "2025-02-13T10:00:00Z",
+  "completed_at": "2025-02-13T11:30:00Z",
+  "workout_type": "strength",
+  "training_phase": "intensification",
+  "overall_rpe": 8,
+  "notes": "Felt strong today",
+  "metadata": {
+    "mood_before": 4,
+    "mood_after": 5,
+    "pre_workout_energy": 7,
+    "post_workout_energy": 6,
+    "stress_before": 3,
+    "stress_after": 2,
+    "sleep_quality": 4
+  },
+  "sets": [
+    {
+      "exercise_id": "456e7890-e89b-12d3-a456-426614174000",
+      "set_number": 1,
+      "set_type": "warmup",
+      "weight": 135.0,
+      "reps": 10,
+      "rest_taken_seconds": 120,
+      "tempo": "2-0-2-0",
+      "form_quality": 5,
+      "rpe": 6,
+      "reps_in_reserve": 4,
+      "notes": "Easy warmup"
+    },
+    {
+      "exercise_id": "456e7890-e89b-12d3-a456-426614174000",
+      "set_number": 2,
+      "set_type": "working",
+      "weight": 225.0,
+      "reps": 5,
+      "rest_taken_seconds": 180,
+      "form_quality": 4,
+      "rpe": 8,
+      "reps_in_reserve": 2,
+      "intensity_percentage": 85,
+      "reached_failure": false
+    }
+  ]
+}
+```
+
+**Response (201 Created):**
+```json
+{
+  "id": "789a0123-e89b-12d3-a456-426614174000",
+  "user_id": "user_123",
+  "plan_id": "123e4567-e89b-12d3-a456-426614174000",
+  "started_at": "2025-02-13T10:00:00Z",
+  "completed_at": "2025-02-13T11:30:00Z",
+  "workout_type": "strength",
+  "training_phase": "intensification",
+  "overall_rpe": 8,
+  "total_sets": 2,
+  "total_volume": 2475.0,
+  "notes": "Felt strong today",
+  "metadata": {...},
+  "created_at": "2025-02-13T11:31:00Z",
+  "updated_at": "2025-02-13T11:31:00Z"
+}
+```
+
+**Error Responses:**
+- `400 Bad Request`: Invalid input data (empty sets, duplicate set numbers, invalid tempo format)
+- `404 Not Found`: Referenced plan not found or deleted
+- `422 Unprocessable Entity`: Validation error (invalid UUID, out-of-range values)
+
+### GET /api/v1/workouts
+
+Retrieve a paginated list of workout sessions.
+
+**Query Parameters:**
+- `page` (integer, default: 1): Page number (1-indexed)
+- `per_page` (integer, default: 20, max: 100): Items per page
+- `date_from` (date, optional): Filter workouts from this date
+- `date_to` (date, optional): Filter workouts until this date
+- `plan_id` (UUID, optional): Filter by plan ID
+- `workout_type` (enum, optional): Filter by workout type
+- `training_phase` (enum, optional): Filter by training phase
+
+**Response (200 OK):**
+```json
+{
+  "items": [
+    {
+      "id": "789a0123-e89b-12d3-a456-426614174000",
+      "plan_id": "123e4567-e89b-12d3-a456-426614174000",
+      "plan_name": "Upper/Lower Split",
+      "started_at": "2025-02-13T10:00:00Z",
+      "completed_at": "2025-02-13T11:30:00Z",
+      "workout_type": "strength",
+      "training_phase": "intensification",
+      "overall_rpe": 8,
+      "total_sets": 10,
+      "total_volume": 15750.0,
+      "effective_volume": 12600.0,
+      "working_sets_count": 8,
+      "notes": "Felt strong today",
+      "created_at": "2025-02-13T11:31:00Z"
+    }
+  ],
+  "total": 42,
+  "page": 1,
+  "per_page": 20,
+  "pages": 3
+}
+```
+
+### GET /api/v1/workouts/{workout_id}
+
+Retrieve detailed workout session with all sets.
+
+**Response (200 OK):**
+```json
+{
+  "id": "789a0123-e89b-12d3-a456-426614174000",
+  "user_id": "user_123",
+  "plan_id": "123e4567-e89b-12d3-a456-426614174000",
+  "plan_name": "Upper/Lower Split",
+  "started_at": "2025-02-13T10:00:00Z",
+  "completed_at": "2025-02-13T11:30:00Z",
+  "workout_type": "strength",
+  "training_phase": "intensification",
+  "overall_rpe": 8,
+  "total_sets": 10,
+  "total_volume": 15750.0,
+  "notes": "Felt strong today",
+  "metadata": {...},
+  "metrics": {
+    "total_volume": 15750.0,
+    "effective_volume": 12600.0,
+    "working_sets_ratio": 0.8,
+    "average_rpe": 7.5,
+    "duration_minutes": 90
+  },
+  "sets": [
+    {
+      "id": "set_123",
+      "exercise_id": "456e7890-e89b-12d3-a456-426614174000",
+      "exercise_name": "Barbell Back Squat",
+      "set_number": 1,
+      "set_type": "working",
+      "weight": 225.0,
+      "reps": 5,
+      "volume_load": 1125.0,
+      "rest_taken_seconds": 180,
+      "tempo": "2-0-2-0",
+      "form_quality": 4,
+      "rpe": 8,
+      "reps_in_reserve": 2,
+      "intensity_percentage": 85,
+      "reached_failure": false,
+      "notes": "Good depth"
+    }
+  ],
+  "created_at": "2025-02-13T11:31:00Z",
+  "updated_at": "2025-02-13T11:31:00Z"
+}
+```
+
+**Error Responses:**
+- `404 Not Found`: Workout not found or access denied
+
+### DELETE /api/v1/workouts/{workout_id}
+
+Delete a workout session and all associated sets.
+
+**Response (204 No Content):** Success, no body
+
+**Error Responses:**
+- `403 Forbidden`: User does not own this workout
+- `404 Not Found`: Workout not found
+
+## Plan Endpoints
 
 ### POST /api/v1/plans
 
@@ -48,13 +237,13 @@ Create a new workout plan.
   "name": "Upper/Lower Split",
   "description": "A 4-day upper/lower split focusing on compound movements",
   "training_style": "powerlifting",
-  "goal": "strength",
   "difficulty_level": "intermediate",
-  "duration_weeks": 12,
+  "duration_weeks": 8,
   "days_per_week": 4,
   "is_public": false,
+  "tags": ["strength", "hypertrophy"],
   "metadata": {
-    "periodization": "linear",
+    "goal": "Increase squat and bench press",
     "equipment_needed": ["barbell", "dumbbells", "rack"]
   }
 }
@@ -64,134 +253,68 @@ Create a new workout plan.
 ```json
 {
   "id": "123e4567-e89b-12d3-a456-426614174000",
+  "user_id": "user_123",
   "name": "Upper/Lower Split",
   "description": "A 4-day upper/lower split focusing on compound movements",
   "training_style": "powerlifting",
-  "goal": "strength",
   "difficulty_level": "intermediate",
-  "duration_weeks": 12,
+  "duration_weeks": 8,
   "days_per_week": 4,
   "is_public": false,
-  "metadata": {
-    "periodization": "linear",
-    "equipment_needed": ["barbell", "dumbbells", "rack"]
-  },
-  "created_at": "2025-02-05T12:00:00Z"
+  "is_active": true,
+  "version_number": 1,
+  "tags": ["strength", "hypertrophy"],
+  "metadata": {...},
+  "created_at": "2025-02-13T10:00:00Z",
+  "updated_at": "2025-02-13T10:00:00Z"
 }
 ```
-
-**Validation Rules:**
-- `name`: Required, 1-100 characters
-- `training_style`: Required, must be one of: `powerlifting`, `bodybuilding`, `powerbuilding`, `crossfit`, `calisthenics`, `general_fitness`
-- `description`: Optional, max 2000 characters
-- `goal`: Optional, max 200 characters
-- `difficulty_level`: Optional, must be one of: `beginner`, `intermediate`, `advanced`
-- `duration_weeks`: Optional, 1-52 weeks
-- `days_per_week`: Optional, 1-7 days
-- `is_public`: Optional, defaults to false
-- `metadata`: Optional, JSON object for additional data
 
 ### GET /api/v1/plans
 
-Get a paginated list of the authenticated user's workout plans.
+Retrieve a paginated list of plans.
 
 **Query Parameters:**
-- `limit`: Number of plans to return (1-100, default: 20)
-- `offset`: Number of plans to skip for pagination (default: 0)
-
-**Example Request:**
-```
-GET /api/v1/plans?limit=10&offset=20
-```
-
-**Response (200 OK):**
-```json
-{
-  "items": [
-    {
-      "id": "123e4567-e89b-12d3-a456-426614174000",
-      "name": "Upper/Lower Split",
-      "description": "A 4-day upper/lower split...",
-      "training_style": "powerlifting",
-      "goal": "strength",
-      "difficulty_level": "intermediate",
-      "duration_weeks": 12,
-      "days_per_week": 4,
-      "is_public": false,
-      "metadata": {},
-      "created_at": "2025-02-05T12:00:00Z"
-    }
-  ],
-  "total": 25,
-  "page": 3,
-  "per_page": 10
-}
-```
-
-#### Pagination contract
-
-- Body fields: `{ items, total, page, per_page }`.
-- There is no `X-Total-Count` header and no `has_next` field; clients can compute `has_next` as `page * per_page < total`.
+- `page` (integer, default: 1): Page number
+- `per_page` (integer, default: 20, max: 100): Items per page
+- `training_style` (enum, optional): Filter by training style
+- `difficulty_level` (enum, optional): Filter by difficulty
+- `days_per_week` (integer, optional): Filter by training frequency
+- `include_public` (boolean, default: false): Include public plans from other users
 
 ### GET /api/v1/plans/{plan_id}
 
-Get a specific workout plan by ID.
+Retrieve a specific plan by ID.
 
-**Authentication:** Optional - required for private plans, optional for public plans
-
-**Path Parameters:**
-- `plan_id`: UUID of the plan
-
-**Response (200 OK):**
-Returns a single plan object (same structure as POST response)
-
-**Error Responses:**
-- 404: Plan not found or access denied
-- 422: Invalid UUID format
+**Note:** Public plans can be accessed without authentication.
 
 ### PUT /api/v1/plans/{plan_id}
 
-Update a workout plan (creates a new version).
-
-**Important:** Plan updates follow an immutable versioning pattern. Updates create a new version while preserving the original.
-
-**Request Body:**
-Same fields as POST, but all fields are optional. Only include fields you want to update.
-
-```json
-{
-  "name": "Updated Upper/Lower Split",
-  "difficulty_level": "advanced"
-}
-```
-
-**Versioning Behavior:**
-- Increments `version_number` automatically
-- Sets `parent_plan_id` to maintain version history
-- Marks current version as inactive (`is_active=false`)
-- New version becomes active (`is_active=true`)
-
-**Response (200 OK):**
-Returns the newly created version with updated fields.
+Update a plan (creates a new version).
 
 ### DELETE /api/v1/plans/{plan_id}
 
-Soft delete a workout plan.
+Soft delete a plan.
 
-**Behavior:**
-- Sets `deleted_at` timestamp (soft delete)
-- Deletes all versions of the plan
-- Prevents deletion if plan has active workout sessions
+## Common Response Formats
 
-**Response:**
-- 204 No Content: Successfully deleted
-- 400 Bad Request: Plan has active workout sessions
-- 403 Forbidden: User doesn't own the plan
-- 404 Not Found: Plan doesn't exist or already deleted
+### Pagination
 
-## Error Responses
+All list endpoints return paginated responses with this structure:
 
-All endpoints follow a consistent error response format:
+```json
+{
+  "items": [...],
+  "total": 100,
+  "page": 1,
+  "per_page": 20,
+  "pages": 5
+}
+```
+
+### Error Responses
+
+All error responses follow this format:
 
 ```json
 {
@@ -199,120 +322,83 @@ All endpoints follow a consistent error response format:
 }
 ```
 
-**Common HTTP Status Codes:**
-- 400 Bad Request: Invalid request data or business rule violation
-- 401 Unauthorized: Invalid or missing authentication token
-- 403 Forbidden: Valid token but insufficient permissions
-- 404 Not Found: Resource not found
-- 409 Conflict: Resource conflict (e.g., duplicate name)
-- 422 Unprocessable Entity: Validation error
-- 500 Internal Server Error: Unexpected server error
+Common HTTP status codes:
+- `200 OK`: Success
+- `201 Created`: Resource created successfully
+- `204 No Content`: Success with no response body (e.g., DELETE)
+- `400 Bad Request`: Invalid request data
+- `401 Unauthorized`: Authentication required
+- `403 Forbidden`: Authenticated but not authorized
+- `404 Not Found`: Resource not found
+- `422 Unprocessable Entity`: Validation error
+- `500 Internal Server Error`: Server error
 
-**Validation Error Response (422):**
-```json
-{
-  "detail": [
-    {
-      "loc": ["body", "duration_weeks"],
-      "msg": "ensure this value is greater than 0",
-      "type": "value_error.number.not_gt"
-    }
-  ]
-}
-```
+## Validation Rules
 
-## Business Rules
+### Workout Validation
+- **Sets**: At least one set required per workout
+- **Set Numbers**: Must be unique per exercise_id, starting from 1
+- **RPE**: Range 1-10 (Rate of Perceived Exertion)
+- **RIR**: Range 0-10 (Reps in Reserve)
+- **Form Quality**: Range 1-5 (integer scale)
+- **Weight**: Non-negative decimal
+- **Reps**: Non-negative integer
+- **Tempo**: Format "X-X-X-X" (e.g., "2-0-2-0")
+- **Intensity Percentage**: Range 0-200
 
-1. **Plan Ownership**: Users can only access their own plans unless a plan is marked as public
-2. **Public Plans**: Can be viewed by anyone (including unauthenticated users)
-3. **Versioning**: Updates create new versions; original plans remain unchanged
-4. **Soft Delete**: Plans are marked as deleted but remain in the database
-5. **Active Sessions**: Plans with active workout sessions cannot be deleted
+### Plan Validation
+- **Name**: Required, 1-100 characters
+- **Duration**: 1-52 weeks
+- **Days per Week**: 1-7 days
+- **Tags**: Maximum 10 tags
+
+## Enums
+
+### WorkoutType
+- `strength`: Heavy lifting, low reps
+- `hypertrophy`: Moderate weight, moderate reps
+- `power`: Explosive movements
+- `endurance`: Light weight, high reps
+- `mixed`: Combination of types
+- `technique`: Form practice
+- `deload`: Recovery week
+
+### TrainingPhase
+- `accumulation`: Volume focus
+- `intensification`: Intensity focus
+- `realization`: Peaking phase
+- `deload`: Recovery phase
+- `testing`: Max testing phase
+
+### SetType
+- `working`: Main working sets
+- `warmup`: Warm-up sets
+- `backoff`: Reduced weight sets
+- `drop`: Drop sets
+- `cluster`: Cluster sets
+- `rest_pause`: Rest-pause sets
+- `amrap`: As Many Reps As Possible
+
+### TrainingStyle
+- `powerlifting`: Focus on squat, bench, deadlift
+- `bodybuilding`: Aesthetic focus
+- `powerbuilding`: Combination of power and aesthetics
+- `crossfit`: Varied functional fitness
+- `weightlifting`: Olympic lifts
+- `general`: General fitness
+
+### DifficultyLevel
+- `beginner`: New to training
+- `intermediate`: 1-3 years experience
+- `advanced`: 3+ years experience
+- `elite`: Competitive level
 
 ## Rate Limiting
 
-Currently, no rate limiting is implemented. This will be added in a future sprint.
+Currently no rate limiting is implemented. This will be added in future versions.
 
-## Examples
+## Versioning
 
-### Creating a Minimal Plan
-```bash
-curl -X POST http://localhost:8000/api/v1/plans \
-  -H "Authorization: Bearer $JWT_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Quick Workout",
-    "training_style": "general_fitness"
-  }'
-```
+API version is included in the URL path: `/api/v1/`
 
-### Getting Plans with Pagination
-```bash
-curl -X GET "http://localhost:8000/api/v1/plans?limit=5&offset=10" \
-  -H "Authorization: Bearer $JWT_TOKEN"
-```
-
-### Updating a Plan
-```bash
-curl -X PUT http://localhost:8000/api/v1/plans/$PLAN_ID \
-  -H "Authorization: Bearer $JWT_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Updated Plan Name",
-    "is_public": true
-  }'
-```
-
-### Viewing a Public Plan (No Auth Required)
-```bash
-curl -X GET http://localhost:8000/api/v1/plans/$PUBLIC_PLAN_ID
-```
-
-## SDK Integration
-
-For frontend integration, use the generated TypeScript types from the OpenAPI schema:
-
-```typescript
-// Example using openapi-typescript-codegen
-import { PlansService } from './generated/services/PlansService';
-
-// Create a plan
-const newPlan = await PlansService.createPlan({
-  name: "My Plan",
-  training_style: "powerlifting"
-});
-
-// Get plans with pagination
-const plans = await PlansService.getPlans({
-  limit: 10,
-  offset: 0
-});
-```
-
-## Postman Collection
-
-A Postman collection with all endpoints and example requests is available at:
-`/docs/postman/slow-burn-plans-api.json` (to be created)
-
-## Migration Notes for Frontend Developers
-
-1. All timestamps are in ISO 8601 format with timezone
-2. UUIDs are strings in standard format
-3. Enums are sent as strings (not integers)
-4. Empty arrays and objects are included in responses (not null)
-5. Pagination uses `offset/limit` pattern, not cursor-based
-
-## Change management and workflow
-
-When adding/changing endpoints or models:
-
-- Update FastAPI routes and Pydantic models, including response examples.
-- Regenerate and verify the schema:
-  ```bash
-  uv run poe verify-openapi           # add --update locally to auto-regenerate
-  ```
-- Commit the updated `openapi.json`. If a breaking change is introduced, bump the API version in `pyproject.toml` (reflected in `info.version`) and coordinate with frontend.
-
-### Schema validation (optional)
-
-If `openapi-spec-validator` is installed, verification will validate the schema. You can skip with `--no-validate`.
+Breaking changes will increment the version number.
